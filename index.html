@@ -483,9 +483,11 @@ function deletePart(){
 function closeEdit(){ editingNodeId=null; document.getElementById('edit-panel').style.display='none'; }
 
 // ============ START ============
-init().catch(err => {
-  console.error(err);
-  document.getElementById('loading').textContent = 'Ошибка: ' + err.message + '. Обнови страницу (F5).';
+window.addEventListener('DOMContentLoaded', () => {
+  init().catch(err => {
+    console.error(err);
+    document.getElementById('loading').textContent = 'Ошибка: ' + err.message;
+  });
 });
 </script>
 </body>
