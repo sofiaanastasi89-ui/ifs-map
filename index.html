@@ -483,7 +483,10 @@ function deletePart(){
 function closeEdit(){ editingNodeId=null; document.getElementById('edit-panel').style.display='none'; }
 
 // ============ START ============
-init();
+init().catch(err => {
+  console.error(err);
+  document.getElementById('loading').textContent = 'Ошибка: ' + err.message + '. Обнови страницу (F5).';
+});
 </script>
 </body>
 </html>
