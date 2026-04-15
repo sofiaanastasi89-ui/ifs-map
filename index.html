@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Карта частей</title>
 <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0f0f1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;height:100vh}
@@ -145,7 +144,24 @@ body{background:#0f0f1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-seri
 // ============ CONFIG ============
 const SUPABASE_URL = 'https://aecprgvtrmastohwhyum.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_k_MKVL1FuCu0JqYCBfea2g_EbHyzGct';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const API_HEADERS = { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
+
+async function dbSelect(slug) {
+  const r = await fetch(SUPABASE_URL + '/rest/v1/maps?slug=eq.' + slug + '&select=*', { headers: API_HEADERS });
+  const rows = await r.json(); return rows[0] || null;
+}
+async function dbInsert(row) {
+  await fetch(SUPABASE_URL + '/rest/v1/maps', { method: 'POST', headers: API_HEADERS, body: JSON.stringify(row) });
+}
+async function dbUpdate(slug, data) {
+  await fetch(SUPABASE_URL + '/rest/v1/maps?slug=eq.' + slug, { method: 'PATCH', headers: API_HEADERS, body: JSON.stringify({ data: data, updated_at: new Date().toISOString() }) });
+}
+async function dbUploadImage(path, file) {
+  const h = { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY };
+  const r = await fetch(SUPABASE_URL + '/storage/v1/object/part-images/' + path, { method: 'POST', headers: h, body: file });
+  if (!r.ok) return '';
+  return SUPABASE_URL + '/storage/v1/object/public/part-images/' + path;
+}
 
 // ============ DEFAULT DATA FOR CL-025 ============
 const DEFAULT_NODES = [
@@ -184,42 +200,37 @@ let cy = null;
 
 // ============ INIT ============
 async function init() {
-  // Get slug from URL hash: #/map/SLUG
-  const hash = window.location.hash;
-  const match = hash.match(/#\/map\/(.+)/);
+  var hash = window.location.hash;
+  var match = hash.match(/#\/map\/(.+)/);
   if (match) {
     mapSlug = match[1];
   } else {
-    // No slug — create new map for CL-025
     mapSlug = 'cl025-' + Math.random().toString(36).substring(2, 8);
     window.location.hash = '#/map/' + mapSlug;
   }
 
-  // Try to load from DB
-  const { data, error } = await sb.from('maps').select('*').eq('slug', mapSlug).single();
-
-  if (data) {
-    mapData = data.data;
+  var row = await dbSelect(mapSlug);
+  if (row) {
+    mapData = row.data;
   } else {
-    // Create new map with default data
     mapData = { nodes: DEFAULT_NODES, edges: DEFAULT_EDGES };
-    await sb.from('maps').insert({ slug: mapSlug, therapist_code: 'ifs2025', data: mapData });
+    await dbInsert({ slug: mapSlug, therapist_code: 'ifs2025', data: mapData });
   }
 
   buildGraph();
   setMode('client');
   document.getElementById('loading').style.display = 'none';
 
-  // Real-time sync
-  sb.channel('maps-changes')
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'maps', filter: 'slug=eq.' + mapSlug }, payload => {
-      const remote = payload.new.data;
-      if (JSON.stringify(remote) !== JSON.stringify(mapData)) {
-        mapData = remote;
+  // Poll for changes every 10 seconds
+  setInterval(async function() {
+    try {
+      var r = await dbSelect(mapSlug);
+      if (r && JSON.stringify(r.data) !== JSON.stringify(mapData)) {
+        mapData = r.data;
         rebuildGraph();
       }
-    })
-    .subscribe();
+    } catch(e) {}
+  }, 10000);
 }
 
 // ============ GRAPH ============
@@ -332,7 +343,7 @@ function scheduleSave(){
   if(saveTimeout) clearTimeout(saveTimeout);
   saveTimeout=setTimeout(async()=>{
     syncPositions();
-    await sb.from('maps').update({ data:mapData, updated_at:new Date().toISOString() }).eq('slug', mapSlug);
+    await dbUpdate(mapSlug, mapData);
     ind.textContent='сохранено'; ind.className='save-indicator saved';
     setTimeout(()=>{ ind.textContent=''; ind.className='save-indicator'; }, 2000);
   }, 800);
@@ -423,12 +434,9 @@ function previewImage(input){
 }
 
 async function uploadImage(file){
-  const ext=file.name.split('.').pop();
-  const path=mapSlug+'/'+Date.now()+'.'+ext;
-  const {data,error}=await sb.storage.from('part-images').upload(path, file, { upsert:true });
-  if(error){ console.error(error); return ''; }
-  const {data:urlData}=sb.storage.from('part-images').getPublicUrl(path);
-  return urlData.publicUrl;
+  var ext=file.name.split('.').pop();
+  var path=mapSlug+'/'+Date.now()+'.'+ext;
+  return await dbUploadImage(path, file);
 }
 
 async function saveEdit(){
