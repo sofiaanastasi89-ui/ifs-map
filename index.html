@@ -209,17 +209,15 @@ async function init() {
     window.location.hash = '#/map/' + mapSlug;
   }
 
-  var row = await dbSelect(mapSlug);
-  if (row) {
-    mapData = row.data;
-  } else {
-    mapData = { nodes: DEFAULT_NODES, edges: DEFAULT_EDGES };
-    await dbInsert({ slug: mapSlug, therapist_code: 'ifs2025', data: mapData });
-  }
-
-  buildGraph();
-  setMode('client');
-  document.getElementById('loading').style.display = 'none';
+  try {
+    var row = await dbSelect(mapSlug);
+    if (row) {
+      mapData = row.data;
+      rebuildGraph();
+    } else {
+      await dbInsert({ slug: mapSlug, therapist_code: 'ifs2025', data: mapData });
+    }
+  } catch(e) { console.error('DB load error:', e); }
 
   // Poll for changes every 10 seconds
   setInterval(async function() {
@@ -490,19 +488,16 @@ function deletePart(){
 
 function closeEdit(){ editingNodeId=null; document.getElementById('edit-panel').style.display='none'; }
 
-// ============ START ============
-window.onload = function() {
-  const container = document.getElementById('cy');
-  if (!container) { document.getElementById('loading').textContent = 'Ошибка: контейнер не найден'; return; }
-  container.style.width = window.innerWidth + 'px';
-  container.style.height = window.innerHeight + 'px';
-  setTimeout(function() {
-    init().catch(function(err) {
-      console.error(err);
-      document.getElementById('loading').textContent = 'Ошибка: ' + err.message;
-    });
-  }, 200);
-};
+// ============ START (sync first, then async DB) ============
+mapData = { nodes: JSON.parse(JSON.stringify(DEFAULT_NODES)), edges: JSON.parse(JSON.stringify(DEFAULT_EDGES)) };
+buildGraph();
+setMode('client');
+document.getElementById('loading').style.display = 'none';
+
+// Then load from DB in background
+setTimeout(function() {
+  init().catch(function(err) { console.error('DB sync error:', err); });
+}, 500);
 </script>
 </body>
 </html>
