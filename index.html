@@ -483,12 +483,18 @@ function deletePart(){
 function closeEdit(){ editingNodeId=null; document.getElementById('edit-panel').style.display='none'; }
 
 // ============ START ============
-window.addEventListener('DOMContentLoaded', () => {
-  init().catch(err => {
-    console.error(err);
-    document.getElementById('loading').textContent = 'Ошибка: ' + err.message;
-  });
-});
+window.onload = function() {
+  const container = document.getElementById('cy');
+  if (!container) { document.getElementById('loading').textContent = 'Ошибка: контейнер не найден'; return; }
+  container.style.width = window.innerWidth + 'px';
+  container.style.height = window.innerHeight + 'px';
+  setTimeout(function() {
+    init().catch(function(err) {
+      console.error(err);
+      document.getElementById('loading').textContent = 'Ошибка: ' + err.message;
+    });
+  }, 200);
+};
 </script>
 </body>
 </html>
