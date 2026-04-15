@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Карта частей</title>
+<script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f0f1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;height:100vh}
+#cy{width:100%;height:100vh}
+.header{position:fixed;top:0;left:0;right:0;z-index:100;background:linear-gradient(180deg,rgba(15,15,26,.95)0%,rgba(15,15,26,.7)80%,transparent);padding:16px 24px 30px;display:flex;align-items:center;gap:16px;pointer-events:none}
+.header h1{font-size:1.3em;color:#e8d5b7;font-weight:600;pointer-events:auto;cursor:default;user-select:none}
+.header p{font-size:.82em;color:#888;margin-top:2px}
+.header-left{flex:1}
+.back-btn{pointer-events:auto;padding:6px 14px;border:1px solid rgba(255,255,255,.15);background:rgba(30,30,50,.9);color:#aaa;border-radius:6px;cursor:pointer;font-size:.78em;font-family:inherit;backdrop-filter:blur(8px);transition:all .2s}
+.back-btn:hover{color:#fff;border-color:rgba(255,255,255,.3)}
+.back-btn.hidden{display:none}
+.save-indicator{pointer-events:none;position:fixed;top:18px;right:24px;z-index:100;font-size:.75em;color:#555;transition:all .3s}
+.save-indicator.saving{color:#d4a017}
+.save-indicator.saved{color:#27ae60}
+.legend{position:fixed;bottom:16px;left:16px;z-index:100;background:rgba(20,20,35,.9);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px 16px;font-size:.78em;backdrop-filter:blur(8px);transition:opacity .3s}
+.legend.hidden{opacity:0;pointer-events:none}
+.legend-item{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.legend-item:last-child{margin-bottom:0}
+.legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.legend-client{position:fixed;bottom:16px;left:16px;z-index:100;background:rgba(20,20,35,.9);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px 16px;font-size:.82em;backdrop-filter:blur(8px);transition:opacity .3s;line-height:1.6}
+.legend-client.hidden{opacity:0;pointer-events:none}
+.controls{position:fixed;bottom:16px;right:16px;z-index:100;display:flex;flex-direction:column;gap:6px}
+.controls button{width:40px;height:40px;border:1px solid rgba(255,255,255,.12);background:rgba(20,20,35,.9);color:#ccc;border-radius:8px;cursor:pointer;font-size:1.1em;backdrop-filter:blur(8px);transition:all .15s}
+.controls button:hover{background:rgba(40,40,60,.95);color:#fff;border-color:rgba(255,255,255,.25)}
+.panel{position:fixed;top:80px;right:16px;z-index:150;background:rgba(20,20,40,.95);border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:16px 20px;backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,.5);width:290px;display:none;max-height:85vh;overflow-y:auto}
+.panel h3{font-size:.95em;margin-bottom:12px;color:#e8d5b7}
+.panel label{font-size:.8em;color:#aaa;display:block;margin-bottom:4px;margin-top:10px}
+.panel input,.panel textarea{width:100%;padding:8px 10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:#e0e0e0;font-family:inherit;font-size:.85em;outline:none}
+.panel input:focus,.panel textarea:focus{border-color:rgba(255,255,255,.3)}
+.panel textarea{height:50px;resize:vertical}
+.panel .btn-row{display:flex;gap:8px;margin-top:14px}
+.panel .btn{flex:1;padding:8px;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-size:.85em}
+.btn-add,.btn-save{background:#27ae60;color:#fff}
+.btn-add:hover,.btn-save:hover{background:#2ecc71}
+.btn-cancel{background:rgba(255,255,255,.08);color:#aaa}
+.btn-cancel:hover{background:rgba(255,255,255,.15);color:#fff}
+.btn-delete{width:100%;padding:8px;margin-top:10px;border:1px solid rgba(192,57,43,.4);border-radius:6px;background:rgba(192,57,43,.1);color:#e74c3c;cursor:pointer;font-family:inherit;font-size:.82em}
+.btn-delete:hover{background:rgba(192,57,43,.3)}
+.color-row,.shape-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.color-swatch{width:28px;height:28px;border-radius:6px;cursor:pointer;border:2px solid transparent;transition:border-color .15s}
+.color-swatch:hover,.color-swatch.active{border-color:#fff}
+.shape-opt{padding:5px 10px;border-radius:5px;cursor:pointer;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:#aaa;font-size:.78em;transition:all .15s}
+.shape-opt:hover,.shape-opt.active{border-color:rgba(255,255,255,.4);color:#fff;background:rgba(255,255,255,.12)}
+.image-upload{margin-top:6px}
+.image-upload input[type=file]{display:none}
+.image-upload .upload-btn{display:inline-block;padding:6px 12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:#aaa;cursor:pointer;font-size:.82em;transition:all .15s}
+.image-upload .upload-btn:hover{background:rgba(255,255,255,.15);color:#fff}
+.image-preview{margin-top:6px;max-width:100%;border-radius:6px}
+.tooltip{position:fixed;z-index:200;background:rgba(20,20,40,.95);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:14px 18px;max-width:340px;font-size:.85em;line-height:1.5;backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,.5);display:none;pointer-events:none}
+.tooltip h3{margin-bottom:6px;font-size:1.05em}
+.tooltip .type{font-size:.8em;opacity:.6;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.tooltip .quote{font-style:italic;opacity:.85;border-left:2px solid;padding-left:10px;margin:8px 0}
+.tooltip .detail{opacity:.7;font-size:.9em}
+.tooltip .part-img{max-width:100%;border-radius:8px;margin-top:8px}
+#loading{position:fixed;inset:0;background:#0f0f1a;display:flex;align-items:center;justify-content:center;z-index:9999;font-size:1.1em;color:#888}
+</style>
+</head>
+<body>
+<div id="loading">Loading...</div>
+
+<div class="header">
+  <div class="header-left">
+    <h1 id="main-title">Моя карта частей</h1>
+    <p>Колесо мыши = зум | Двойной клик = редактировать | Перетаскивание</p>
+  </div>
+  <button class="back-btn hidden" id="btn-back" onclick="setMode('client')">&#8592; к клиенту</button>
+</div>
+
+<div class="save-indicator" id="save-indicator"></div>
+
+<div class="legend hidden" id="legend-therapist">
+  <div class="legend-item"><div class="legend-dot" style="background:#c0392b"></div> Пожарные</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#d4a017"></div> Менеджеры</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7f8c8d"></div> Критик</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#2980b9"></div> Изгнанники</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#27ae60"></div> Self</div>
+</div>
+
+<div class="legend-client" id="legend-client">
+  Это карта твоих внутренних частей.<br>
+  Наведи на часть, чтобы узнать больше.<br>
+  Двойной клик — редактировать.<br>
+  Можно перетаскивать и добавлять новые.
+</div>
+
+<div class="controls">
+  <button onclick="cy.zoom(cy.zoom()*1.3);cy.center();" title="Приблизить">+</button>
+  <button onclick="cy.zoom(cy.zoom()/1.3);cy.center();" title="Отдалить">-</button>
+  <button onclick="cy.fit(null,50);" title="Вписать">&#x22A1;</button>
+  <button onclick="toggleAddPanel();" title="Добавить часть" id="btn-add">&#x2795;</button>
+</div>
+
+<div class="panel" id="add-panel">
+  <h3>Добавить новую часть</h3>
+  <label>Название</label>
+  <input type="text" id="new-name" placeholder="Как ты её называешь?">
+  <label>Что она говорит?</label>
+  <textarea id="new-quote" placeholder="Её голос, слова..."></textarea>
+  <label>Где ощущается?</label>
+  <input type="text" id="new-body" placeholder="В теле, рядом, образ...">
+  <div class="btn-row">
+    <button class="btn btn-add" onclick="addPart()">Добавить</button>
+    <button class="btn btn-cancel" onclick="toggleAddPanel()">Отмена</button>
+  </div>
+</div>
+
+<div class="panel" id="edit-panel">
+  <h3 id="edit-title">Редактировать</h3>
+  <label>Название</label>
+  <input type="text" id="edit-name">
+  <label>Что говорит?</label>
+  <textarea id="edit-quote"></textarea>
+  <label>Описание</label>
+  <textarea id="edit-detail"></textarea>
+  <label>Фото / картинка для части</label>
+  <div class="image-upload">
+    <label class="upload-btn" for="edit-image">Выбрать файл</label>
+    <input type="file" id="edit-image" accept="image/*" onchange="previewImage(this)">
+    <span id="edit-image-name" style="font-size:.78em;color:#666;margin-left:8px"></span>
+  </div>
+  <img id="edit-image-preview" class="image-preview" style="display:none">
+  <label>Цвет</label>
+  <div class="color-row" id="color-row"></div>
+  <label>Форма</label>
+  <div class="shape-row" id="shape-row"></div>
+  <div class="btn-row">
+    <button class="btn btn-save" onclick="saveEdit()">Сохранить</button>
+    <button class="btn btn-cancel" onclick="closeEdit()">Отмена</button>
+  </div>
+  <button class="btn-delete" onclick="deletePart()">Удалить эту часть</button>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+<div id="cy"></div>
+
+<script>
+// ============ CONFIG ============
+const SUPABASE_URL = 'https://aecprgvtrmastohwhyum.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_k_MKVL1FuCu0JqYCBfea2g_EbHyzGct';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ============ DEFAULT DATA FOR CL-025 ============
+const DEFAULT_NODES = [
+  { id:'self', label:'Наблюдатель\n/ Self', clientLabel:'Спокойное\nсостояние', type:'Self', group:'self', quote:'«просто есть и есть»\n«режим наблюдателя»', clientQuote:'«Просто есть и есть.\nРежим наблюдателя»', detail:'Спокойный, нейтральный.', clientDetail:'Спокойное состояние. Когда можно просто наблюдать.', color:'#27ae60', border:'#2ecc71', textColor:'#fff', x:0, y:-350, image:'' },
+  { id:'p1', label:'Холодная\n/ Костлявая', clientLabel:'Холодная\nКостлявая', type:'Пожарный', group:'firefighter', quote:'«Не ешь. Иди убейся.\nТы недостойна жизни»', clientQuote:'«Не ешь.\nТы недостойна жизни»', detail:'Телесно: холод, прозрачность, костлявая, в животе. Затмевает всех.', clientDetail:'Холод, прозрачная, твердая, костлявая. В животе. Затмевает все остальное.', color:'#922', border:'#c0392b', textColor:'#fff', x:280, y:-80, image:'' },
+  { id:'p2', label:'Лучше\nв больнице', clientLabel:'Лучше\nв больнице', type:'Пожарный', group:'firefighter', quote:'«Лучше с трубками,\nчем быть толстой»', clientQuote:'«Лучше с трубками,\nчем быть толстой»', detail:'Рационализирует отказ от еды. Близнец Холодной.', clientDetail:'Говорит что лучше страдать, чем быть в теле которое не нравится.', color:'#922', border:'#c0392b', textColor:'#fff', x:280, y:130, image:'' },
+  { id:'m1', label:'Не смотри\nтуда', clientLabel:'Не смотри\nтуда', type:'Менеджер', group:'manager', quote:'«Слон в комнате —\nне трогай, затопчет»', clientQuote:'«Слон в комнате —\nне трогай, затопчет»', detail:'Предотвращает контакт с РПП-кластером.', clientDetail:'«Если начну слушать — опять начну делать». Старается защитить от повторения.', color:'#7a6b00', border:'#d4a017', textColor:'#fff', x:-280, y:-80, image:'' },
+  { id:'m2', label:'Заботливая', clientLabel:'Заботливая', type:'Менеджер', group:'manager', quote:'«Это очень грустно»', clientQuote:'«Это очень грустно»', detail:'Жалость к себе. Сдерживает рецидив. Появилась ПОСЛЕ травмы.', clientDetail:'Жалость к себе, грусть. Сдерживает от того чтобы провалиться.', color:'#7a6b00', border:'#d4a017', textColor:'#fff', x:-280, y:130, image:'' },
+  { id:'m3', label:'Критик\n/ Слабо-\nхарактерная', clientLabel:'Та что\nсверху', type:'Менеджер (автономный)', group:'critic', quote:'«Ты слабачка. Просто не ешь.\nОдни плюсы»', clientQuote:'«Просто не ешь.\nОдни плюсы: похудеешь,\nсэкономишь»', detail:'Высоко, холодно, далеко. Как резкий дождь. Редко.', clientDetail:'Высоко, холодно, далеко. Как резкий короткий дождь.', color:'#4a4a5a', border:'#7f8c8d', textColor:'#ddd', x:480, y:-280, image:'' },
+  { id:'e1', label:'Маленькая\n(3 года)', clientLabel:'Маленькая', type:'Изгнанник', group:'exile', quote:'«Трехлетний ребенок.\nМог ли представить?»', clientQuote:'«Мог ли трехлетний ребенок\nпредставить что с ним\nтакое будет?»', detail:'Держится на дистанции. Несет раннюю боль.', clientDetail:'Абстрактный ребенок. Им очень жалко её.', color:'#1a5276', border:'#2980b9', textColor:'#fff', x:80, y:350, image:'' },
+  { id:'e2', label:'Грусть\n/ Сожаление', clientLabel:'Грусть\nи сожаление', type:'Протоизгнанник', group:'exile', quote:'«Столько лет, а я\nничего не добилась»', clientQuote:'«Столько лет, а я\nничего не добилась.\nСтолько возможностей»', detail:'Раскаяние. Течет к Заботливой.', clientDetail:'Раскаяние. Сожаление о потерянном времени.', color:'#1a5276', border:'#2980b9', textColor:'#fff', x:-220, y:350, image:'' }
+];
+
+const DEFAULT_EDGES = [
+  { id:'e-twins', source:'p1', target:'p2', label:'близнецы', clientLabel:'вместе', color:'#c0392b', width:3, style:'solid', therapistOnly:false, bidir:true },
+  { id:'e-coal', source:'m1', target:'m2', label:'коалиция', clientLabel:'вместе', color:'#d4a017', width:3, style:'solid', therapistOnly:false, bidir:true },
+  { id:'e-block', source:'m1', target:'p1', label:'блокирует', clientLabel:'', color:'#e67e22', width:2.5, style:'solid', therapistOnly:false, bidir:false },
+  { id:'e-restr', source:'m2', target:'p1', label:'сдерживает', clientLabel:'', color:'#e67e22', width:2, style:'solid', therapistOnly:false, bidir:false },
+  { id:'e-pain', source:'p1', target:'e1', label:'от боли', clientLabel:'', color:'#c0392b', width:1.5, style:'dashed', therapistOnly:true, bidir:false },
+  { id:'e-guard', source:'m1', target:'e1', label:'охраняет', clientLabel:'', color:'#d4a017', width:1.5, style:'dashed', therapistOnly:true, bidir:false },
+  { id:'e-pity', source:'m2', target:'e1', label:'жалеет', clientLabel:'', color:'#d4a017', width:1.5, style:'dashed', therapistOnly:true, bidir:false },
+  { id:'e-flows', source:'e2', target:'m2', label:'течет к', clientLabel:'', color:'#5dade2', width:1.5, style:'dashed', therapistOnly:false, bidir:false },
+  { id:'e-logic', source:'m3', target:'p1', label:'подкрепляет', clientLabel:'', color:'#7f8c8d', width:1.5, style:'dashed', therapistOnly:true, bidir:false },
+];
+
+// ============ STATE ============
+let currentMode = 'client';
+let mapSlug = '';
+let mapData = null;
+let addedCount = 0;
+let editingNodeId = null;
+let editColor = null;
+let editShape = null;
+let saveTimeout = null;
+let cy = null;
+
+// ============ INIT ============
+async function init() {
+  // Get slug from URL hash: #/map/SLUG
+  const hash = window.location.hash;
+  const match = hash.match(/#\/map\/(.+)/);
+  if (match) {
+    mapSlug = match[1];
+  } else {
+    // No slug — create new map for CL-025
+    mapSlug = 'cl025-' + Math.random().toString(36).substring(2, 8);
+    window.location.hash = '#/map/' + mapSlug;
+  }
+
+  // Try to load from DB
+  const { data, error } = await sb.from('maps').select('*').eq('slug', mapSlug).single();
+
+  if (data) {
+    mapData = data.data;
+  } else {
+    // Create new map with default data
+    mapData = { nodes: DEFAULT_NODES, edges: DEFAULT_EDGES };
+    await sb.from('maps').insert({ slug: mapSlug, therapist_code: 'ifs2025', data: mapData });
+  }
+
+  buildGraph();
+  setMode('client');
+  document.getElementById('loading').style.display = 'none';
+
+  // Real-time sync
+  sb.channel('maps-changes')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'maps', filter: 'slug=eq.' + mapSlug }, payload => {
+      const remote = payload.new.data;
+      if (JSON.stringify(remote) !== JSON.stringify(mapData)) {
+        mapData = remote;
+        rebuildGraph();
+      }
+    })
+    .subscribe();
+}
+
+// ============ GRAPH ============
+const SHAPE_MAP = { 'self':'ellipse', 'firefighter':'round-rectangle', 'manager':'round-rectangle', 'critic':'round-hexagon', 'exile':'round-diamond', 'added':'round-rectangle' };
+
+function buildGraph() {
+  const elements = [];
+  mapData.nodes.forEach(n => {
+    elements.push({
+      data: { id:n.id, label:n.label, clientLabel:n.clientLabel||n.label, nodeType:n.type||'', nodeGroup:n.group||'added', quote:n.quote||'', clientQuote:n.clientQuote||n.quote||'', detail:n.detail||'', clientDetail:n.clientDetail||n.detail||'', bgColor:n.color||'#3a3a50', borderColor:n.border||'#6c6c8a', textColor:n.textColor||'#e0e0e0', image:n.image||'' },
+      position: { x: n.x||0, y: n.y||0 }
+    });
+  });
+  mapData.edges.forEach(e => {
+    elements.push({
+      data: { id:e.id, source:e.source, target:e.target, label:e.label||'', clientLabel:e.clientLabel!==undefined?e.clientLabel:e.label||'', edgeColor:e.color||'#888', edgeWidth:e.width||2, edgeStyle:e.style||'solid', therapistOnly:!!e.therapistOnly, bidir:!!e.bidir }
+    });
+  });
+
+  cy = cytoscape({
+    container: document.getElementById('cy'),
+    elements: elements,
+    userZoomingEnabled:true, userPanningEnabled:true, boxSelectionEnabled:false,
+    style: [
+      { selector:'node', style:{ 'label':'data(label)', 'text-valign':'center', 'text-halign':'center', 'text-wrap':'wrap', 'text-max-width':'120px', 'font-size':'13px', 'font-family':'Segoe UI,system-ui,sans-serif', 'font-weight':'600', 'color':'data(textColor)', 'background-color':'data(bgColor)', 'border-width':3, 'border-color':'data(borderColor)', 'width':140, 'height':140, 'shape':'round-rectangle', 'background-image':'data(image)', 'background-fit':'cover', 'background-opacity':1, 'transition-property':'border-width,width,height', 'transition-duration':'0.15s' }},
+      { selector:'node[nodeGroup="self"]', style:{ 'shape':'ellipse', 'width':150, 'height':150, 'border-width':4 }},
+      { selector:'node[nodeGroup="exile"]', style:{ 'shape':'round-diamond', 'width':160, 'height':160 }},
+      { selector:'node[nodeGroup="critic"]', style:{ 'shape':'round-hexagon', 'width':145, 'height':145, 'font-size':'11px' }},
+      { selector:'node[nodeGroup="added"]', style:{ 'border-style':'dashed' }},
+      { selector:'node.hover', style:{ 'border-width':5, 'width':155, 'height':155, 'z-index':999 }},
+      { selector:'edge', style:{ 'width':'data(edgeWidth)', 'line-color':'data(edgeColor)', 'target-arrow-color':'data(edgeColor)', 'target-arrow-shape':'triangle', 'arrow-scale':1.2, 'curve-style':'bezier', 'label':'data(label)', 'font-size':'10px', 'color':'#aaa', 'text-background-color':'#0f0f1a', 'text-background-opacity':.85, 'text-background-padding':'3px', 'text-rotation':'autorotate', 'text-wrap':'wrap', 'text-max-width':'90px', 'opacity':.7, 'transition-property':'opacity,width', 'transition-duration':'0.15s' }},
+      { selector:'edge[edgeStyle="dashed"]', style:{ 'line-style':'dashed', 'line-dash-pattern':[8,5] }},
+      { selector:'edge[edgeStyle="dotted"]', style:{ 'line-style':'dotted', 'line-dash-pattern':[3,5], 'target-arrow-shape':'none' }},
+      { selector:'edge[?bidir]', style:{ 'source-arrow-shape':'triangle', 'source-arrow-color':'data(edgeColor)' }},
+      { selector:'edge.hover', style:{ 'opacity':1, 'width':4 }},
+      { selector:'.dimmed', style:{ 'opacity':.15 }},
+      { selector:'.hidden-edge', style:{ 'display':'none' }}
+    ],
+    layout:{ name:'preset' },
+    minZoom:.3, maxZoom:3, wheelSensitivity:.3
+  });
+
+  cy.fit(null, 60);
+  setupInteractions();
+}
+
+function rebuildGraph() {
+  if (!cy) return;
+  const zoom = cy.zoom();
+  const pan = cy.pan();
+  cy.destroy();
+  buildGraph();
+  cy.zoom(zoom);
+  cy.pan(pan);
+  applyMode();
+}
+
+function setupInteractions() {
+  cy.on('mouseover','node', function(e){ const n=e.target; n.addClass('hover'); const c=n.connectedEdges().connectedNodes(); cy.elements().not(n).not(n.connectedEdges()).not(c).addClass('dimmed'); n.connectedEdges().addClass('hover'); showTooltip(n,e); });
+  cy.on('mouseout','node', function(e){ e.target.removeClass('hover'); cy.elements().removeClass('dimmed'); cy.edges().removeClass('hover'); hideTooltip(); });
+  cy.on('tap','node', function(e){ showTooltip(e.target,e); });
+  cy.on('tap', function(e){ if(e.target===cy) hideTooltip(); });
+  cy.on('dbltap','node', function(e){ openEdit(e.target.id()); });
+  cy.on('dragfree','node', function(){ scheduleSave(); });
+}
+
+// ============ MODE ============
+let clickCount=0, clickTimer=null;
+document.getElementById('main-title').addEventListener('click', function(){
+  clickCount++;
+  if(clickTimer) clearTimeout(clickTimer);
+  clickTimer=setTimeout(()=>{clickCount=0;},500);
+  if(clickCount>=3){
+    clickCount=0; clearTimeout(clickTimer);
+    if(currentMode==='client'){
+      const code=prompt('Код терапевта:');
+      if(code==='ifs2025') setMode('therapist');
+    } else { setMode('client'); }
+  }
+});
+
+function setMode(mode){
+  currentMode=mode;
+  document.getElementById('main-title').textContent = mode==='therapist'? 'CL-025 — карта частей' : 'Моя карта частей';
+  document.getElementById('btn-back').classList.toggle('hidden', mode!=='therapist');
+  document.getElementById('legend-therapist').classList.toggle('hidden', mode!=='therapist');
+  document.getElementById('legend-client').classList.toggle('hidden', mode!=='client');
+  applyMode();
+  hideTooltip();
+}
+
+function applyMode(){
+  if(!cy) return;
+  cy.nodes().forEach(n=>{ n.data('label', currentMode==='client'? (n.data('clientLabel')||n.data('label')) : getOrigLabel(n.id())); });
+  cy.edges().forEach(e=>{
+    const d=e.data();
+    if(currentMode==='client'){
+      if(d.therapistOnly){ e.addClass('hidden-edge'); } else { e.removeClass('hidden-edge'); e.data('label', d.clientLabel!==undefined? d.clientLabel : d.label); }
+    } else { e.removeClass('hidden-edge'); e.data('label', getOrigEdgeLabel(e.id())); }
+  });
+}
+
+function getOrigLabel(nodeId){ const n=mapData.nodes.find(n=>n.id===nodeId); return n? n.label : ''; }
+function getOrigEdgeLabel(edgeId){ const e=mapData.edges.find(e=>e.id===edgeId); return e? e.label : ''; }
+
+// ============ SAVE ============
+function scheduleSave(){
+  const ind=document.getElementById('save-indicator');
+  ind.textContent='сохраняю...'; ind.className='save-indicator saving';
+  if(saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout=setTimeout(async()=>{
+    syncPositions();
+    await sb.from('maps').update({ data:mapData, updated_at:new Date().toISOString() }).eq('slug', mapSlug);
+    ind.textContent='сохранено'; ind.className='save-indicator saved';
+    setTimeout(()=>{ ind.textContent=''; ind.className='save-indicator'; }, 2000);
+  }, 800);
+}
+
+function syncPositions(){
+  if(!cy) return;
+  cy.nodes().forEach(n=>{
+    const pos=n.position();
+    const nd=mapData.nodes.find(x=>x.id===n.id());
+    if(nd){ nd.x=Math.round(pos.x); nd.y=Math.round(pos.y); }
+  });
+}
+
+// ============ TOOLTIP ============
+const tooltip=document.getElementById('tooltip');
+function showTooltip(node,evt){
+  const d=node.data(), bc=d.borderColor, isC=currentMode==='client';
+  const quote=isC?(d.clientQuote||d.quote):d.quote;
+  const detail=isC?(d.clientDetail||d.detail):d.detail;
+  const typeH=isC?'':`<div class="type">${d.nodeType}</div>`;
+  const imgH=d.image?`<img class="part-img" src="${d.image}">`:'';
+  tooltip.innerHTML=`<h3 style="color:${bc}">${(isC?d.clientLabel:d.label).replace(/\n/g,' ')}</h3>${typeH}<div class="quote" style="border-color:${bc}">${quote.replace(/\n/g,'<br>')}</div><div class="detail">${detail}</div>${imgH}`;
+  const pos=evt.renderedPosition||evt.position;
+  let l=pos.x+20, t=pos.y-20;
+  if(l+350>window.innerWidth) l=pos.x-360;
+  if(t+250>window.innerHeight) t=window.innerHeight-260;
+  if(t<10) t=10;
+  tooltip.style.left=l+'px'; tooltip.style.top=t+'px'; tooltip.style.display='block';
+}
+function hideTooltip(){ tooltip.style.display='none'; }
+
+// ============ ADD PART ============
+function toggleAddPanel(){ const p=document.getElementById('add-panel'); p.style.display=p.style.display==='block'?'none':'block'; document.getElementById('edit-panel').style.display='none'; }
+
+function addPart(){
+  const name=document.getElementById('new-name').value.trim();
+  const quote=document.getElementById('new-quote').value.trim();
+  const body=document.getElementById('new-body').value.trim();
+  if(!name) return;
+  addedCount++;
+  const id='added-'+Date.now();
+  const ext=cy.extent();
+  const x=Math.round((ext.x1+ext.x2)/2+(Math.random()-.5)*100);
+  const y=Math.round((ext.y1+ext.y2)/2+(Math.random()-.5)*100);
+  const node={ id, label:name, clientLabel:name, type:'Новая часть', group:'added', quote:quote||'...', clientQuote:quote||'...', detail:body?'Ощущается: '+body:'', clientDetail:body?'Ощущается: '+body:'', color:'#3a3a50', border:'#6c6c8a', textColor:'#e0e0e0', x, y, image:'' };
+  mapData.nodes.push(node);
+  cy.add({ data:{ id, label:name, clientLabel:name, nodeType:'Новая часть', nodeGroup:'added', quote:quote||'...', clientQuote:quote||'...', detail:node.detail, clientDetail:node.clientDetail, bgColor:'#3a3a50', borderColor:'#6c6c8a', textColor:'#e0e0e0', image:'' }, position:{x,y} });
+  document.getElementById('new-name').value=''; document.getElementById('new-quote').value=''; document.getElementById('new-body').value='';
+  toggleAddPanel();
+  scheduleSave();
+}
+
+// ============ EDIT PART ============
+const COLORS=[ {n:'красный',bg:'#922',b:'#c0392b'},{n:'оранжевый',bg:'#8a5000',b:'#e67e22'},{n:'жёлтый',bg:'#7a6b00',b:'#d4a017'},{n:'зелёный',bg:'#1e6e3e',b:'#27ae60'},{n:'голубой',bg:'#1a5276',b:'#2980b9'},{n:'фиолетовый',bg:'#5b2c6f',b:'#8e44ad'},{n:'розовый',bg:'#78244c',b:'#c0507e'},{n:'серый',bg:'#4a4a5a',b:'#7f8c8d'},{n:'тёмный',bg:'#2c2c3a',b:'#555'} ];
+const SHAPES=[ {n:'Квадрат',v:'round-rectangle'},{n:'Круг',v:'ellipse'},{n:'Ромб',v:'round-diamond'},{n:'Шестиугольник',v:'round-hexagon'},{n:'Треугольник',v:'round-triangle'} ];
+
+function openEdit(nodeId){
+  const node=cy.getElementById(nodeId); if(!node||node.empty()) return;
+  const d=node.data(); editingNodeId=nodeId;
+  const isC=currentMode==='client';
+  document.getElementById('edit-name').value=(isC?(d.clientLabel||d.label):d.label).replace(/\n/g,' ');
+  document.getElementById('edit-quote').value=(isC?(d.clientQuote||d.quote):d.quote).replace(/\\n/g,'\n');
+  document.getElementById('edit-detail').value=isC?(d.clientDetail||d.detail):d.detail;
+  editColor={bg:d.bgColor,border:d.borderColor}; editShape=node.style('shape');
+  // Image preview
+  const prev=document.getElementById('edit-image-preview');
+  if(d.image){ prev.src=d.image; prev.style.display='block'; } else { prev.style.display='none'; }
+  document.getElementById('edit-image-name').textContent='';
+  buildColorRow(); buildShapeRow();
+  document.querySelectorAll('#color-row .color-swatch').forEach(el=>{ if(el.dataset.border===d.borderColor) el.classList.add('active'); });
+  document.querySelectorAll('#shape-row .shape-opt').forEach(el=>{ if(el.dataset.value===editShape) el.classList.add('active'); });
+  document.getElementById('edit-panel').style.display='block';
+  document.getElementById('add-panel').style.display='none';
+  hideTooltip();
+}
+
+function buildColorRow(){ const r=document.getElementById('color-row'); r.innerHTML=''; COLORS.forEach(c=>{ const el=document.createElement('div'); el.className='color-swatch'; el.style.background=c.b; el.title=c.n; el.dataset.bg=c.bg; el.dataset.border=c.b; el.onclick=()=>{ r.querySelectorAll('.color-swatch').forEach(s=>s.classList.remove('active')); el.classList.add('active'); editColor={bg:c.bg,border:c.b}; }; r.appendChild(el); }); }
+function buildShapeRow(){ const r=document.getElementById('shape-row'); r.innerHTML=''; SHAPES.forEach(s=>{ const el=document.createElement('div'); el.className='shape-opt'; el.textContent=s.n; el.dataset.value=s.v; el.onclick=()=>{ r.querySelectorAll('.shape-opt').forEach(o=>o.classList.remove('active')); el.classList.add('active'); editShape=s.v; }; r.appendChild(el); }); }
+
+function previewImage(input){
+  if(!input.files||!input.files[0]) return;
+  const file=input.files[0];
+  document.getElementById('edit-image-name').textContent=file.name;
+  const reader=new FileReader();
+  reader.onload=e=>{ document.getElementById('edit-image-preview').src=e.target.result; document.getElementById('edit-image-preview').style.display='block'; };
+  reader.readAsDataURL(file);
+}
+
+async function uploadImage(file){
+  const ext=file.name.split('.').pop();
+  const path=mapSlug+'/'+Date.now()+'.'+ext;
+  const {data,error}=await sb.storage.from('part-images').upload(path, file, { upsert:true });
+  if(error){ console.error(error); return ''; }
+  const {data:urlData}=sb.storage.from('part-images').getPublicUrl(path);
+  return urlData.publicUrl;
+}
+
+async function saveEdit(){
+  if(!editingNodeId) return;
+  const node=cy.getElementById(editingNodeId);
+  if(!node||node.empty()) return;
+  const name=document.getElementById('edit-name').value.trim();
+  const quote=document.getElementById('edit-quote').value.trim();
+  const detail=document.getElementById('edit-detail').value.trim();
+  const isC=currentMode==='client';
+  const labelVal=name.length>14?name.replace(/ /g,'\n'):name;
+
+  // Upload image if selected
+  const fileInput=document.getElementById('edit-image');
+  let imageUrl=node.data('image')||'';
+  if(fileInput.files&&fileInput.files[0]){
+    imageUrl=await uploadImage(fileInput.files[0]);
+  }
+
+  // Update cytoscape node
+  if(isC){ node.data('clientLabel',labelVal); node.data('label',labelVal); node.data('clientQuote',quote); node.data('quote',quote); node.data('clientDetail',detail); node.data('detail',detail); }
+  else { node.data('label',labelVal); node.data('quote',quote); node.data('detail',detail); }
+  if(editColor){ node.data('bgColor',editColor.bg); node.data('borderColor',editColor.border); node.style({'background-color':editColor.bg,'border-color':editColor.border}); }
+  if(editShape) node.style('shape',editShape);
+  if(imageUrl){ node.data('image',imageUrl); node.style('background-image',imageUrl); }
+
+  // Update mapData
+  const nd=mapData.nodes.find(n=>n.id===editingNodeId);
+  if(nd){
+    if(isC){ nd.clientLabel=labelVal; nd.clientQuote=quote; nd.clientDetail=detail; }
+    else { nd.label=labelVal; nd.quote=quote; nd.detail=detail; }
+    if(editColor){ nd.color=editColor.bg; nd.border=editColor.border; }
+    if(imageUrl) nd.image=imageUrl;
+  }
+
+  fileInput.value='';
+  closeEdit();
+  scheduleSave();
+}
+
+function deletePart(){
+  if(!editingNodeId) return;
+  const node=cy.getElementById(editingNodeId);
+  if(!node||node.empty()) return;
+  node.connectedEdges().remove(); node.remove();
+  mapData.nodes=mapData.nodes.filter(n=>n.id!==editingNodeId);
+  mapData.edges=mapData.edges.filter(e=>e.source!==editingNodeId&&e.target!==editingNodeId);
+  closeEdit();
+  scheduleSave();
+}
+
+function closeEdit(){ editingNodeId=null; document.getElementById('edit-panel').style.display='none'; }
+
+// ============ START ============
+init();
+</script>
+</body>
+</html>
