@@ -201,11 +201,17 @@ let cy = null;
 // ============ INIT ============
 async function init() {
   var hash = window.location.hash;
-  var match = hash.match(/#\/map\/(.+)/);
+  if (hash === '#/new' || hash === '#new') {
+    mapSlug = 'map-' + Math.random().toString(36).substring(2, 8);
+    window.location.hash = '#/map/' + mapSlug;
+    mapData = { nodes: [], edges: [] };
+    rebuildGraph();
+  }
+  var match = window.location.hash.match(/#\/map\/(.+)/);
   if (match) {
     mapSlug = match[1];
   } else {
-    mapSlug = 'cl025-' + Math.random().toString(36).substring(2, 8);
+    mapSlug = 'map-' + Math.random().toString(36).substring(2, 8);
     window.location.hash = '#/map/' + mapSlug;
   }
 
