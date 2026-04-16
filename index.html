@@ -184,19 +184,16 @@ body{background:#0f0f1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-seri
 <div class="panel" id="edge-panel">
   <h3>Новая связь</h3>
   <p id="edge-from-to" style="font-size:.8em;color:#aaa;margin-bottom:8px;line-height:1.5"></p>
-  <label>Название (для терапевта)</label>
+  <label>Тип отношения</label>
+  <div class="shape-row" id="edge-type-row" style="gap:5px;margin-bottom:2px"></div>
+  <label>Название</label>
   <input type="text" id="edge-label" placeholder="блокирует, защищает, течёт к...">
-  <label>Для клиента <span style="opacity:.5">(пусто = скрыть)</span></label>
-  <input type="text" id="edge-client-label" placeholder="вместе, рядом...">
   <label>Цвет линии</label>
   <div class="color-row" id="edge-color-row"></div>
   <label>Стиль линии</label>
   <div class="shape-row" id="edge-style-row"></div>
   <label>Направление</label>
   <div class="shape-row" id="edge-dir-row"></div>
-  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:10px">
-    <input type="checkbox" id="edge-therapist-only"> Только для терапевта
-  </label>
   <div class="btn-row">
     <button class="btn btn-save" onclick="saveEdge()">Создать</button>
     <button class="btn btn-cancel" onclick="cancelEdge()">Отмена</button>
@@ -230,7 +227,7 @@ async function dbUploadImage(path, file) {
 
 // ============ DEFAULT DATA FOR CL-025 ============
 const DEFAULT_NODES = [
-  { id:'self', label:'Наблюдатель\n/ Self', clientLabel:'Спокойное\nсостояние', type:'Self', group:'self', quote:'«просто есть и есть»\n«режим наблюдателя»', clientQuote:'«Просто есть и есть.\nРежим наблюдателя»', detail:'Спокойный, нейтральный.', clientDetail:'Спокойное состояние. Когда можно просто наблюдать.', color:'#27ae60', border:'#2ecc71', textColor:'#fff', x:0, y:-350, image:'' },
+  { id:'self', label:'Наблюдатель\n/ Self', clientLabel:'Я', type:'Self', group:'self', quote:'«просто есть и есть»\n«режим наблюдателя»', clientQuote:'«Просто есть и есть.\nРежим наблюдателя»', detail:'Спокойный, нейтральный.', clientDetail:'Спокойное состояние. Когда можно просто наблюдать.', color:'#27ae60', border:'#2ecc71', textColor:'#fff', x:0, y:-350, image:'' },
   { id:'p1', label:'Холодная\n/ Костлявая', clientLabel:'Холодная\nКостлявая', type:'Пожарный', group:'firefighter', quote:'«Не ешь. Иди убейся.\nТы недостойна жизни»', clientQuote:'«Не ешь.\nТы недостойна жизни»', detail:'Телесно: холод, прозрачность, костлявая, в животе. Затмевает всех.', clientDetail:'Холод, прозрачная, твердая, костлявая. В животе. Затмевает все остальное.', color:'#922', border:'#c0392b', textColor:'#fff', x:280, y:-80, image:'' },
   { id:'p2', label:'Лучше\nв больнице', clientLabel:'Лучше\nв больнице', type:'Пожарный', group:'firefighter', quote:'«Лучше с трубками,\nчем быть толстой»', clientQuote:'«Лучше с трубками,\nчем быть толстой»', detail:'Рационализирует отказ от еды. Близнец Холодной.', clientDetail:'Говорит что лучше страдать, чем быть в теле которое не нравится.', color:'#922', border:'#c0392b', textColor:'#fff', x:280, y:130, image:'' },
   { id:'m1', label:'Не смотри\nтуда', clientLabel:'Не смотри\nтуда', type:'Менеджер', group:'manager', quote:'«Слон в комнате —\nне трогай, затопчет»', clientQuote:'«Слон в комнате —\nне трогай, затопчет»', detail:'Предотвращает контакт с РПП-кластером.', clientDetail:'«Если начну слушать — опять начну делать». Старается защитить от повторения.', color:'#7a6b00', border:'#d4a017', textColor:'#fff', x:-280, y:-80, image:'' },
@@ -315,7 +312,7 @@ function buildGraph() {
   });
   mapData.edges.forEach(e => {
     elements.push({
-      data: { id:e.id, source:e.source, target:e.target, label:e.label||'', clientLabel:e.clientLabel!==undefined?e.clientLabel:e.label||'', edgeColor:e.color||'#888', edgeWidth:e.width||2, edgeStyle:e.style||'solid', therapistOnly:!!e.therapistOnly, bidir:!!e.bidir }
+      data: { id:e.id, source:e.source, target:e.target, label:e.label||'', clientLabel:e.clientLabel!==undefined?e.clientLabel:e.label||'', edgeColor:e.color||'#888', edgeWidth:e.width||2, edgeStyle:e.style||'solid', therapistOnly:!!e.therapistOnly, clientOnly:!!e.clientOnly, bidir:!!e.bidir }
     });
   });
 
@@ -380,6 +377,15 @@ function setupInteractions() {
 }
 
 // ============ MODE ============
+document.getElementById('main-title').addEventListener('dblclick', function(){
+  if(currentMode!=='therapist') return;
+  const newName=prompt('Имя клиента:', mapData.name||'');
+  if(newName===null) return;
+  mapData.name=newName.trim();
+  document.getElementById('main-title').textContent=mapData.name||mapSlug;
+  scheduleSave();
+});
+
 let clickCount=0, clickTimer=null;
 document.getElementById('main-title').addEventListener('click', function(){
   clickCount++;
@@ -396,7 +402,7 @@ document.getElementById('main-title').addEventListener('click', function(){
 
 function setMode(mode){
   currentMode=mode;
-  document.getElementById('main-title').textContent = mode==='therapist'? 'CL-025 — карта частей' : 'Моя карта частей';
+  document.getElementById('main-title').textContent = mode==='therapist'? ((mapData&&mapData.name)||mapSlug||'Карта клиента') : 'Моя карта частей';
   document.getElementById('btn-back').classList.toggle('hidden', mode!=='therapist');
   document.getElementById('legend-therapist').classList.toggle('hidden', mode!=='therapist');
   document.getElementById('legend-client').classList.toggle('hidden', mode!=='client');
@@ -411,7 +417,9 @@ function applyMode(){
     const d=e.data();
     if(currentMode==='client'){
       if(d.therapistOnly){ e.addClass('hidden-edge'); } else { e.removeClass('hidden-edge'); e.data('label', d.clientLabel!==undefined? d.clientLabel : d.label); }
-    } else { e.removeClass('hidden-edge'); e.data('label', getOrigEdgeLabel(e.id())); }
+    } else {
+      if(d.clientOnly){ e.addClass('hidden-edge'); } else { e.removeClass('hidden-edge'); e.data('label', getOrigEdgeLabel(e.id())); }
+    }
   });
 }
 
@@ -623,11 +631,21 @@ function startHidePhotoPopup(){ photoPopupTimer=setTimeout(()=>{ document.getEle
 function hidePhotoPopup(){ clearTimeout(photoPopupTimer); document.getElementById('photo-popup').style.display='none'; }
 
 // ============ CONNECTIONS ============
-let connectingFrom=null, edgePanelTarget=null, edgeColorVal='#888888', edgeStyleVal='solid', edgeBidirVal=false;
+const EDGE_TYPES=[
+  {n:'Поляризация', v:'polarization', color:'#c0392b', style:'solid', width:3, bidir:true, label:'поляризация'},
+  {n:'Защита', v:'protection', color:'#2980b9', style:'solid', width:1.5, bidir:false, label:'защищает'},
+  {n:'Триггер', v:'trigger', color:'#e67e22', style:'dashed', width:2, bidir:false, label:'триггерит'},
+  {n:'Союз', v:'alliance', color:'#27ae60', style:'solid', width:2, bidir:true, label:'союз'},
+  {n:'Реагирует на', v:'reacts', color:'#8e44ad', style:'dashed', width:1.5, bidir:false, label:'реагирует на'},
+  {n:'Недоверие', v:'distrust', color:'#888888', style:'dashed', width:1.5, bidir:false, label:'не доверяет'},
+  {n:'Своё', v:'custom', color:null, style:null, width:null, bidir:null, label:''},
+];
+
+let connectingFrom=null, edgePanelTarget=null, edgeColorVal='#888888', edgeStyleVal='solid', edgeBidirVal=false, edgeRelType='';
 
 function startConnectFromEdit(){ const nid=editingNodeId; closeEdit(); startConnect(nid); }
 function startConnect(nodeId){ connectingFrom=nodeId; document.getElementById('connect-hint').classList.add('show'); hideTooltip(); }
-function cancelEdge(){ connectingFrom=null; edgePanelTarget=null; document.getElementById('connect-hint').classList.remove('show'); document.getElementById('edge-panel').style.display='none'; }
+function cancelEdge(){ connectingFrom=null; edgePanelTarget=null; edgeRelType=''; document.getElementById('connect-hint').classList.remove('show'); document.getElementById('edge-panel').style.display='none'; }
 
 function openEdgePanel(fromId,toId){
   edgePanelTarget=toId;
@@ -638,9 +656,28 @@ function openEdgePanel(fromId,toId){
   document.getElementById('edge-label').value='';
   document.getElementById('edge-client-label').value='';
   document.getElementById('edge-therapist-only').checked=false;
-  edgeColorVal='#888888'; edgeStyleVal='solid'; edgeBidirVal=false;
-  buildEdgeColorRow(); buildEdgeStyleRow(); buildEdgeDirRow();
+  edgeColorVal='#888888'; edgeStyleVal='solid'; edgeBidirVal=false; edgeRelType='';
+  buildEdgeTypeRow(); buildEdgeColorRow(); buildEdgeStyleRow(); buildEdgeDirRow();
   document.getElementById('edge-panel').style.display='block';
+}
+
+function buildEdgeTypeRow(){
+  const r=document.getElementById('edge-type-row'); r.innerHTML='';
+  EDGE_TYPES.forEach(t=>{
+    const el=document.createElement('div'); el.className='shape-opt'+(edgeRelType===t.v?' active':'');
+    el.style.cssText='font-size:.75em;padding:4px 8px;display:flex;align-items:center;gap:5px';
+    if(t.color){ const dot=document.createElement('span'); dot.style.cssText='width:8px;height:8px;border-radius:50%;background:'+t.color+';flex-shrink:0'; el.appendChild(dot); }
+    el.appendChild(document.createTextNode(t.n));
+    el.onclick=()=>{
+      r.querySelectorAll('.shape-opt').forEach(o=>o.classList.remove('active')); el.classList.add('active'); edgeRelType=t.v;
+      if(t.v!=='custom'){
+        edgeColorVal=t.color; edgeStyleVal=t.style; edgeBidirVal=t.bidir;
+        if(!document.getElementById('edge-label').value.trim()) document.getElementById('edge-label').value=t.label;
+        buildEdgeColorRow(); buildEdgeStyleRow(); buildEdgeDirRow();
+      }
+    };
+    r.appendChild(el);
+  });
 }
 
 function buildEdgeColorRow(){
@@ -671,12 +708,14 @@ function buildEdgeDirRow(){
 function saveEdge(){
   if(!connectingFrom||!edgePanelTarget) return;
   const label=document.getElementById('edge-label').value.trim();
-  const clientLabel=document.getElementById('edge-client-label').value.trim();
-  const therapistOnly=document.getElementById('edge-therapist-only').checked;
+  const clientLabel=label;
+  const therapistOnly=currentMode==='therapist';
+  const clientOnly=currentMode==='client';
   const id='e-'+Date.now();
-  const edge={ id, source:connectingFrom, target:edgePanelTarget, label, clientLabel, color:edgeColorVal, width:2, style:edgeStyleVal, therapistOnly, bidir:edgeBidirVal };
+  const edgeWidth=EDGE_TYPES.find(t=>t.v===edgeRelType)?.width||2;
+  const edge={ id, source:connectingFrom, target:edgePanelTarget, label, clientLabel, color:edgeColorVal, width:edgeWidth, style:edgeStyleVal, therapistOnly, clientOnly, bidir:edgeBidirVal, relType:edgeRelType };
   mapData.edges.push(edge);
-  cy.add({ data:{ id, source:connectingFrom, target:edgePanelTarget, label, clientLabel, edgeColor:edgeColorVal, edgeWidth:2, edgeStyle:edgeStyleVal, therapistOnly, bidir:edgeBidirVal } });
+  cy.add({ data:{ id, source:connectingFrom, target:edgePanelTarget, label, clientLabel, edgeColor:edgeColorVal, edgeWidth:edgeWidth, edgeStyle:edgeStyleVal, therapistOnly, bidir:edgeBidirVal } });
   if(currentMode==='client'){ const el=cy.getElementById(id); if(therapistOnly) el.addClass('hidden-edge'); else el.data('label',clientLabel); }
   cancelEdge();
   scheduleSave();
