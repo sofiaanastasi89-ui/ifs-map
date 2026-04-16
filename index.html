@@ -70,6 +70,9 @@ body{background:#0f0f1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-seri
 .edge-delete-popup .cls-btn{padding:4px 8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);color:#aaa;border-radius:4px;cursor:pointer;font-size:.82em;font-family:inherit}
 .btn-connect{width:100%;padding:8px;margin-top:6px;border:1px solid rgba(41,128,185,.4);border-radius:6px;background:rgba(41,128,185,.1);color:#5dade2;cursor:pointer;font-family:inherit;font-size:.82em}
 .btn-connect:hover{background:rgba(41,128,185,.25)}
+.camera-btn{display:none;position:fixed;z-index:300;background:rgba(20,20,40,.92);border:1px solid rgba(255,255,255,.25);border-radius:50%;width:34px;height:34px;align-items:center;justify-content:center;cursor:pointer;font-size:1em;backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,.4);transition:background .15s}
+.camera-btn.show{display:flex}
+.camera-btn:hover{background:rgba(60,60,100,.95);border-color:rgba(255,255,255,.45)}
 </style>
 </head>
 <body>
@@ -151,6 +154,7 @@ body{background:#0f0f1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-seri
 <div class="tooltip" id="tooltip"></div>
 
 <div class="lightbox" id="lightbox" onclick="closeLightbox()"><img id="lightbox-img" src=""></div>
+<div class="camera-btn" id="camera-btn" title="Посмотреть фото" onclick="openCurrentLightbox()">📷</div>
 <div class="connect-hint" id="connect-hint">Нажмите на часть, с которой хотите создать связь<br><small style="opacity:.6">Нажмите на пустое место для отмены</small></div>
 <div class="edge-delete-popup" id="edge-delete-popup" style="display:none">
   <span id="edge-popup-label" style="color:#aaa"></span>
@@ -335,8 +339,8 @@ function rebuildGraph() {
 }
 
 function setupInteractions() {
-  cy.on('mouseover','node', function(e){ const n=e.target; n.addClass('hover'); const c=n.connectedEdges().connectedNodes(); cy.elements().not(n).not(n.connectedEdges()).not(c).addClass('dimmed'); n.connectedEdges().addClass('hover'); if(!connectingFrom) showTooltip(n,e); });
-  cy.on('mouseout','node', function(e){ e.target.removeClass('hover'); cy.elements().removeClass('dimmed'); cy.edges().removeClass('hover'); hideTooltip(); });
+  cy.on('mouseover','node', function(e){ const n=e.target; n.addClass('hover'); const c=n.connectedEdges().connectedNodes(); cy.elements().not(n).not(n.connectedEdges()).not(c).addClass('dimmed'); n.connectedEdges().addClass('hover'); if(!connectingFrom){ showTooltip(n,e); showCameraBtn(n); } });
+  cy.on('mouseout','node', function(e){ e.target.removeClass('hover'); cy.elements().removeClass('dimmed'); cy.edges().removeClass('hover'); hideTooltip(); hideCameraBtn(); });
   cy.on('tap','node', function(e){
     if(connectingFrom){ const tid=e.target.id(); if(tid!==connectingFrom) openEdgePanel(connectingFrom,tid); return; }
     showTooltip(e.target,e);
@@ -348,6 +352,9 @@ function setupInteractions() {
   const tip=document.getElementById('tooltip');
   tip.addEventListener('mouseenter',()=>clearTimeout(tooltipHideTimer));
   tip.addEventListener('mouseleave',()=>hideTooltip());
+  const cam=document.getElementById('camera-btn');
+  cam.addEventListener('mouseenter',()=>clearTimeout(cameraBtnTimer));
+  cam.addEventListener('mouseleave',()=>hideCameraBtn());
 }
 
 // ============ MODE ============
@@ -420,7 +427,7 @@ function showTooltip(node,evt){
   const quote=isC?(d.clientQuote||d.quote):d.quote;
   const detail=isC?(d.clientDetail||d.detail):d.detail;
   const typeH=isC?'':`<div class="type">${d.nodeType}</div>`;
-  const imgH=d.image?`<img class="part-img" src="${d.image}" onclick="openLightbox('${d.image}')" title="Нажмите для просмотра">`:'';
+  const imgH='';
   tooltip.innerHTML=`<h3 style="color:${bc}">${(isC?d.clientLabel:d.label).replace(/\n/g,' ')}</h3>${typeH}<div class="quote" style="border-color:${bc}">${quote.replace(/\n/g,'<br>')}</div><div class="detail">${detail}</div>${imgH}`;
   const pos=evt.renderedPosition||evt.position;
   let l=pos.x+20, t=pos.y-20;
@@ -516,7 +523,7 @@ async function saveEdit(){
   else { node.data('label',labelVal); node.data('quote',quote); node.data('detail',detail); }
   if(editColor){ node.data('bgColor',editColor.bg); node.data('borderColor',editColor.border); node.style({'background-color':editColor.bg,'border-color':editColor.border}); }
   if(editShape) node.style('shape',editShape);
-  if(imageUrl){ node.data('image',imageUrl); node.style('background-image',imageUrl); }
+  if(imageUrl){ node.data('image',imageUrl); }
 
   // Update mapData
   const nd=mapData.nodes.find(n=>n.id===editingNodeId);
@@ -548,6 +555,21 @@ function closeEdit(){ editingNodeId=null; document.getElementById('edit-panel').
 // ============ LIGHTBOX ============
 function openLightbox(src){ document.getElementById('lightbox-img').src=src; document.getElementById('lightbox').classList.add('open'); }
 function closeLightbox(){ document.getElementById('lightbox').classList.remove('open'); }
+
+// ============ CAMERA BTN ============
+let currentNodeImage='', cameraBtnTimer=null;
+function showCameraBtn(node){
+  const img=node.data('image'); if(!img) return;
+  currentNodeImage=img;
+  const pos=node.renderedPosition();
+  const hw=node.renderedWidth()/2, hh=node.renderedHeight()/2;
+  const btn=document.getElementById('camera-btn');
+  btn.style.left=(pos.x+hw-16)+'px';
+  btn.style.top=(pos.y-hh-16)+'px';
+  clearTimeout(cameraBtnTimer); btn.classList.add('show');
+}
+function hideCameraBtn(){ cameraBtnTimer=setTimeout(()=>{ document.getElementById('camera-btn').classList.remove('show'); },150); }
+function openCurrentLightbox(){ if(currentNodeImage) openLightbox(currentNodeImage); }
 
 // ============ CONNECTIONS ============
 let connectingFrom=null, edgePanelTarget=null, edgeColorVal='#888888', edgeStyleVal='solid', edgeBidirVal=false;
