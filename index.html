@@ -69,6 +69,8 @@ body{background:#0f0f1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-seri
 .lightbox-info .lb-quote{font-style:italic;opacity:.85;border-left:2px solid #888;padding-left:10px;margin-bottom:12px;font-size:.88em;line-height:1.6;word-wrap:break-word}
 .lightbox-info .lb-detail{opacity:.65;font-size:.82em;line-height:1.5;word-wrap:break-word}
 .lightbox-close{position:absolute;top:10px;right:14px;background:none;border:none;color:#aaa;font-size:1.3em;cursor:pointer;z-index:3001;line-height:1}
+#photo-popup{display:none;position:fixed;z-index:210;background:rgba(20,20,40,.95);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px;backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,.5);pointer-events:auto}
+#photo-popup img{display:block;max-width:220px;max-height:240px;border-radius:8px;object-fit:contain}
 .connect-hint{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1000;background:rgba(30,30,50,.97);border:1px solid rgba(100,180,255,.3);border-radius:12px;padding:14px 28px;text-align:center;font-size:.9em;color:#e8d5b7;pointer-events:none;box-shadow:0 8px 32px rgba(0,0,0,.5)}
 .connect-hint.show{display:block}
 .edge-delete-popup{display:none;position:fixed;z-index:250;background:rgba(20,20,40,.97);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px 14px;font-size:.82em;backdrop-filter:blur(8px);display:flex;align-items:center;gap:8px}
@@ -171,6 +173,7 @@ body{background:#0f0f1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-seri
   </div>
 </div>
 <div class="camera-btn" id="camera-btn" title="Посмотреть фото" onclick="openCurrentLightbox()">📷</div>
+<div id="photo-popup"><img id="photo-popup-img" src=""></div>
 <div class="connect-hint" id="connect-hint">Нажмите на часть, с которой хотите создать связь<br><small style="opacity:.6">Нажмите на пустое место для отмены</small></div>
 <div class="edge-delete-popup" id="edge-delete-popup" style="display:none">
   <span id="edge-popup-label" style="color:#aaa"></span>
@@ -356,21 +359,24 @@ function rebuildGraph() {
 
 function setupInteractions() {
   cy.on('mouseover','node', function(e){ const n=e.target; n.addClass('hover'); const c=n.connectedEdges().connectedNodes(); cy.elements().not(n).not(n.connectedEdges()).not(c).addClass('dimmed'); n.connectedEdges().addClass('hover'); if(!connectingFrom){ showTooltip(n,e); showCameraBtn(n); } });
-  cy.on('mouseout','node', function(e){ e.target.removeClass('hover'); cy.elements().removeClass('dimmed'); cy.edges().removeClass('hover'); hideTooltip(); hideCameraBtn(); });
+  cy.on('mouseout','node', function(e){ e.target.removeClass('hover'); cy.elements().removeClass('dimmed'); cy.edges().removeClass('hover'); hideTooltip(); hideCameraBtn(); startHidePhotoPopup(); });
   cy.on('tap','node', function(e){
     if(connectingFrom){ const tid=e.target.id(); if(tid!==connectingFrom) openEdgePanel(connectingFrom,tid); return; }
     showTooltip(e.target,e);
   });
   cy.on('tap','edge', function(e){ showEdgePopup(e.target,e); });
-  cy.on('tap', function(e){ if(e.target===cy){ hideTooltip(); hideEdgePopup(); if(connectingFrom) cancelEdge(); } });
+  cy.on('tap', function(e){ if(e.target===cy){ hideTooltip(); hideEdgePopup(); hidePhotoPopup(); if(connectingFrom) cancelEdge(); } });
   cy.on('dbltap','node', function(e){ openEdit(e.target.id()); });
   cy.on('dragfree','node', function(){ scheduleSave(); });
   const tip=document.getElementById('tooltip');
   tip.addEventListener('mouseenter',()=>clearTimeout(tooltipHideTimer));
   tip.addEventListener('mouseleave',()=>hideTooltip());
   const cam=document.getElementById('camera-btn');
-  cam.addEventListener('mouseenter',()=>clearTimeout(cameraBtnTimer));
-  cam.addEventListener('mouseleave',()=>hideCameraBtn());
+  cam.addEventListener('mouseenter',()=>{ clearTimeout(cameraBtnTimer); clearTimeout(tooltipHideTimer); });
+  cam.addEventListener('mouseleave',()=>{ hideCameraBtn(); startHidePhotoPopup(); hideTooltip(); });
+  const pp=document.getElementById('photo-popup');
+  pp.addEventListener('mouseenter',()=>{ clearTimeout(photoPopupTimer); clearTimeout(tooltipHideTimer); });
+  pp.addEventListener('mouseleave',()=>{ startHidePhotoPopup(); hideTooltip(); });
 }
 
 // ============ MODE ============
@@ -443,9 +449,7 @@ function showTooltip(node,evt){
   const quote=isC?(d.clientQuote||d.quote):d.quote;
   const detail=isC?(d.clientDetail||d.detail):d.detail;
   const typeH=isC?'':`<div class="type">${d.nodeType}</div>`;
-  currentNodeImage=d.image||'';
-  currentNodeData={ name:(isC?d.clientLabel:d.label)||'', quote:(isC?d.clientQuote:d.quote)||'', detail:(isC?d.clientDetail:d.detail)||'' };
-  const imgH=d.image?`<img class="part-img" src="${d.image}" onclick="openCurrentLightbox()" title="Открыть фото">`:'';
+  const imgH='';
   tooltip.innerHTML=`<h3 style="color:${bc}">${(isC?d.clientLabel:d.label).replace(/\n/g,' ')}</h3>${typeH}<div class="quote" style="border-color:${bc}">${quote.replace(/\n/g,'<br>')}</div><div class="detail">${detail}</div>${imgH}`;
   const pos=evt.renderedPosition||evt.position;
   let l=pos.x+20, t=pos.y-20;
@@ -600,7 +604,23 @@ function showCameraBtn(node){
   clearTimeout(cameraBtnTimer); btn.classList.add('show');
 }
 function hideCameraBtn(){ cameraBtnTimer=setTimeout(()=>{ document.getElementById('camera-btn').classList.remove('show'); },150); }
-function openCurrentLightbox(){ if(currentNodeImage) openLightbox(currentNodeImage, currentNodeData); }
+let photoPopupTimer=null;
+function openCurrentLightbox(){
+  if(!currentNodeImage) return;
+  const pp=document.getElementById('photo-popup');
+  document.getElementById('photo-popup-img').src=currentNodeImage;
+  const tt=document.getElementById('tooltip');
+  const tLeft=parseInt(tt.style.left)||0;
+  const tTop=parseInt(tt.style.top)||0;
+  const tWidth=tt.offsetWidth||340;
+  let left=tLeft+tWidth+10;
+  if(left+240>window.innerWidth) left=Math.max(0,tLeft-240);
+  pp.style.left=left+'px';
+  pp.style.top=tTop+'px';
+  pp.style.display='block';
+}
+function startHidePhotoPopup(){ photoPopupTimer=setTimeout(()=>{ document.getElementById('photo-popup').style.display='none'; },150); }
+function hidePhotoPopup(){ clearTimeout(photoPopupTimer); document.getElementById('photo-popup').style.display='none'; }
 
 // ============ CONNECTIONS ============
 let connectingFrom=null, edgePanelTarget=null, edgeColorVal='#888888', edgeStyleVal='solid', edgeBidirVal=false;
