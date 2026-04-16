@@ -53,13 +53,23 @@ body{background:#0f0f1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-seri
 .image-upload .upload-btn{display:inline-block;padding:6px 12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:#aaa;cursor:pointer;font-size:.82em;transition:all .15s}
 .image-upload .upload-btn:hover{background:rgba(255,255,255,.15);color:#fff}
 .image-preview{margin-top:6px;max-width:100%;border-radius:6px}
-.tooltip{position:fixed;z-index:200;background:rgba(20,20,40,.95);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:14px 18px;max-width:340px;font-size:.85em;line-height:1.5;backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,.5);display:none;pointer-events:none}
+.tooltip{position:fixed;z-index:200;background:rgba(20,20,40,.95);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:14px 18px;max-width:340px;font-size:.85em;line-height:1.5;backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,.5);display:none;pointer-events:auto}
 .tooltip h3{margin-bottom:6px;font-size:1.05em}
 .tooltip .type{font-size:.8em;opacity:.6;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
 .tooltip .quote{font-style:italic;opacity:.85;border-left:2px solid;padding-left:10px;margin:8px 0}
 .tooltip .detail{opacity:.7;font-size:.9em}
-.tooltip .part-img{max-width:100%;border-radius:8px;margin-top:8px}
+.tooltip .part-img{width:100%;max-height:110px;object-fit:cover;border-radius:8px;margin-top:8px;cursor:zoom-in}
 #loading{position:fixed;inset:0;background:#0f0f1a;display:flex;align-items:center;justify-content:center;z-index:9999;font-size:1.1em;color:#888}
+.lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:3000;align-items:center;justify-content:center;cursor:zoom-out}
+.lightbox.open{display:flex}
+.lightbox img{max-width:90vw;max-height:90vh;border-radius:12px;object-fit:contain;box-shadow:0 8px 40px rgba(0,0,0,.6)}
+.connect-hint{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1000;background:rgba(30,30,50,.97);border:1px solid rgba(100,180,255,.3);border-radius:12px;padding:14px 28px;text-align:center;font-size:.9em;color:#e8d5b7;pointer-events:none;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.connect-hint.show{display:block}
+.edge-delete-popup{display:none;position:fixed;z-index:250;background:rgba(20,20,40,.97);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px 14px;font-size:.82em;backdrop-filter:blur(8px);display:flex;align-items:center;gap:8px}
+.edge-delete-popup .del-btn{padding:4px 10px;border:1px solid rgba(192,57,43,.4);background:rgba(192,57,43,.1);color:#e74c3c;border-radius:4px;cursor:pointer;font-size:.82em;font-family:inherit}
+.edge-delete-popup .cls-btn{padding:4px 8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);color:#aaa;border-radius:4px;cursor:pointer;font-size:.82em;font-family:inherit}
+.btn-connect{width:100%;padding:8px;margin-top:6px;border:1px solid rgba(41,128,185,.4);border-radius:6px;background:rgba(41,128,185,.1);color:#5dade2;cursor:pointer;font-family:inherit;font-size:.82em}
+.btn-connect:hover{background:rgba(41,128,185,.25)}
 </style>
 </head>
 <body>
@@ -135,9 +145,41 @@ body{background:#0f0f1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-seri
     <button class="btn btn-cancel" onclick="closeEdit()">Отмена</button>
   </div>
   <button class="btn-delete" onclick="deletePart()">Удалить эту часть</button>
+  <button class="btn-connect" onclick="startConnectFromEdit()">+ Связать с другой частью</button>
 </div>
 
 <div class="tooltip" id="tooltip"></div>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox()"><img id="lightbox-img" src=""></div>
+<div class="connect-hint" id="connect-hint">Нажмите на часть, с которой хотите создать связь<br><small style="opacity:.6">Нажмите на пустое место для отмены</small></div>
+<div class="edge-delete-popup" id="edge-delete-popup" style="display:none">
+  <span id="edge-popup-label" style="color:#aaa"></span>
+  <button class="del-btn" onclick="deleteEdgeFromPopup()">Удалить связь</button>
+  <button class="cls-btn" onclick="hideEdgePopup()">✕</button>
+</div>
+
+<div class="panel" id="edge-panel">
+  <h3>Новая связь</h3>
+  <p id="edge-from-to" style="font-size:.8em;color:#aaa;margin-bottom:8px;line-height:1.5"></p>
+  <label>Название (для терапевта)</label>
+  <input type="text" id="edge-label" placeholder="блокирует, защищает, течёт к...">
+  <label>Для клиента <span style="opacity:.5">(пусто = скрыть)</span></label>
+  <input type="text" id="edge-client-label" placeholder="вместе, рядом...">
+  <label>Цвет линии</label>
+  <div class="color-row" id="edge-color-row"></div>
+  <label>Стиль линии</label>
+  <div class="shape-row" id="edge-style-row"></div>
+  <label>Направление</label>
+  <div class="shape-row" id="edge-dir-row"></div>
+  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:10px">
+    <input type="checkbox" id="edge-therapist-only"> Только для терапевта
+  </label>
+  <div class="btn-row">
+    <button class="btn btn-save" onclick="saveEdge()">Создать</button>
+    <button class="btn btn-cancel" onclick="cancelEdge()">Отмена</button>
+  </div>
+</div>
+
 <div id="cy"></div>
 
 <script>
@@ -293,12 +335,19 @@ function rebuildGraph() {
 }
 
 function setupInteractions() {
-  cy.on('mouseover','node', function(e){ const n=e.target; n.addClass('hover'); const c=n.connectedEdges().connectedNodes(); cy.elements().not(n).not(n.connectedEdges()).not(c).addClass('dimmed'); n.connectedEdges().addClass('hover'); showTooltip(n,e); });
+  cy.on('mouseover','node', function(e){ const n=e.target; n.addClass('hover'); const c=n.connectedEdges().connectedNodes(); cy.elements().not(n).not(n.connectedEdges()).not(c).addClass('dimmed'); n.connectedEdges().addClass('hover'); if(!connectingFrom) showTooltip(n,e); });
   cy.on('mouseout','node', function(e){ e.target.removeClass('hover'); cy.elements().removeClass('dimmed'); cy.edges().removeClass('hover'); hideTooltip(); });
-  cy.on('tap','node', function(e){ showTooltip(e.target,e); });
-  cy.on('tap', function(e){ if(e.target===cy) hideTooltip(); });
+  cy.on('tap','node', function(e){
+    if(connectingFrom){ const tid=e.target.id(); if(tid!==connectingFrom) openEdgePanel(connectingFrom,tid); return; }
+    showTooltip(e.target,e);
+  });
+  cy.on('tap','edge', function(e){ showEdgePopup(e.target,e); });
+  cy.on('tap', function(e){ if(e.target===cy){ hideTooltip(); hideEdgePopup(); if(connectingFrom) cancelEdge(); } });
   cy.on('dbltap','node', function(e){ openEdit(e.target.id()); });
   cy.on('dragfree','node', function(){ scheduleSave(); });
+  const tip=document.getElementById('tooltip');
+  tip.addEventListener('mouseenter',()=>clearTimeout(tooltipHideTimer));
+  tip.addEventListener('mouseleave',()=>hideTooltip());
 }
 
 // ============ MODE ============
@@ -363,13 +412,15 @@ function syncPositions(){
 }
 
 // ============ TOOLTIP ============
+let tooltipHideTimer=null;
 const tooltip=document.getElementById('tooltip');
 function showTooltip(node,evt){
+  clearTimeout(tooltipHideTimer);
   const d=node.data(), bc=d.borderColor, isC=currentMode==='client';
   const quote=isC?(d.clientQuote||d.quote):d.quote;
   const detail=isC?(d.clientDetail||d.detail):d.detail;
   const typeH=isC?'':`<div class="type">${d.nodeType}</div>`;
-  const imgH=d.image?`<img class="part-img" src="${d.image}">`:'';
+  const imgH=d.image?`<img class="part-img" src="${d.image}" onclick="openLightbox('${d.image}')" title="Нажмите для просмотра">`:'';
   tooltip.innerHTML=`<h3 style="color:${bc}">${(isC?d.clientLabel:d.label).replace(/\n/g,' ')}</h3>${typeH}<div class="quote" style="border-color:${bc}">${quote.replace(/\n/g,'<br>')}</div><div class="detail">${detail}</div>${imgH}`;
   const pos=evt.renderedPosition||evt.position;
   let l=pos.x+20, t=pos.y-20;
@@ -378,7 +429,7 @@ function showTooltip(node,evt){
   if(t<10) t=10;
   tooltip.style.left=l+'px'; tooltip.style.top=t+'px'; tooltip.style.display='block';
 }
-function hideTooltip(){ tooltip.style.display='none'; }
+function hideTooltip(){ tooltipHideTimer=setTimeout(()=>{ tooltip.style.display='none'; },150); }
 
 // ============ ADD PART ============
 function toggleAddPanel(){ const p=document.getElementById('add-panel'); p.style.display=p.style.display==='block'?'none':'block'; document.getElementById('edit-panel').style.display='none'; }
@@ -493,6 +544,90 @@ function deletePart(){
 }
 
 function closeEdit(){ editingNodeId=null; document.getElementById('edit-panel').style.display='none'; }
+
+// ============ LIGHTBOX ============
+function openLightbox(src){ document.getElementById('lightbox-img').src=src; document.getElementById('lightbox').classList.add('open'); }
+function closeLightbox(){ document.getElementById('lightbox').classList.remove('open'); }
+
+// ============ CONNECTIONS ============
+let connectingFrom=null, edgePanelTarget=null, edgeColorVal='#888888', edgeStyleVal='solid', edgeBidirVal=false;
+
+function startConnectFromEdit(){ const nid=editingNodeId; closeEdit(); startConnect(nid); }
+function startConnect(nodeId){ connectingFrom=nodeId; document.getElementById('connect-hint').classList.add('show'); hideTooltip(); }
+function cancelEdge(){ connectingFrom=null; edgePanelTarget=null; document.getElementById('connect-hint').classList.remove('show'); document.getElementById('edge-panel').style.display='none'; }
+
+function openEdgePanel(fromId,toId){
+  edgePanelTarget=toId;
+  document.getElementById('connect-hint').classList.remove('show');
+  const fn=mapData.nodes.find(n=>n.id===fromId);
+  const tn=mapData.nodes.find(n=>n.id===toId);
+  document.getElementById('edge-from-to').textContent=(fn?.label||fromId).replace(/\n/g,' ')+' → '+(tn?.label||toId).replace(/\n/g,' ');
+  document.getElementById('edge-label').value='';
+  document.getElementById('edge-client-label').value='';
+  document.getElementById('edge-therapist-only').checked=false;
+  edgeColorVal='#888888'; edgeStyleVal='solid'; edgeBidirVal=false;
+  buildEdgeColorRow(); buildEdgeStyleRow(); buildEdgeDirRow();
+  document.getElementById('edge-panel').style.display='block';
+}
+
+function buildEdgeColorRow(){
+  const r=document.getElementById('edge-color-row'); r.innerHTML='';
+  [{n:'серый',v:'#888888'},{n:'красный',v:'#c0392b'},{n:'оранжевый',v:'#e67e22'},{n:'жёлтый',v:'#d4a017'},{n:'зелёный',v:'#27ae60'},{n:'голубой',v:'#2980b9'},{n:'фиолетовый',v:'#8e44ad'}].forEach(c=>{
+    const el=document.createElement('div'); el.className='color-swatch'+(edgeColorVal===c.v?' active':''); el.style.background=c.v; el.title=c.n;
+    el.onclick=()=>{ r.querySelectorAll('.color-swatch').forEach(s=>s.classList.remove('active')); el.classList.add('active'); edgeColorVal=c.v; };
+    r.appendChild(el);
+  });
+}
+function buildEdgeStyleRow(){
+  const r=document.getElementById('edge-style-row'); r.innerHTML='';
+  [['Сплошная','solid'],['Пунктир','dashed']].forEach(([n,v])=>{
+    const el=document.createElement('div'); el.className='shape-opt'+(edgeStyleVal===v?' active':''); el.textContent=n;
+    el.onclick=()=>{ r.querySelectorAll('.shape-opt').forEach(o=>o.classList.remove('active')); el.classList.add('active'); edgeStyleVal=v; };
+    r.appendChild(el);
+  });
+}
+function buildEdgeDirRow(){
+  const r=document.getElementById('edge-dir-row'); r.innerHTML='';
+  [['→ Одностороннее',false],['↔ Двустороннее',true]].forEach(([n,v])=>{
+    const el=document.createElement('div'); el.className='shape-opt'+(edgeBidirVal===v?' active':''); el.textContent=n;
+    el.onclick=()=>{ r.querySelectorAll('.shape-opt').forEach(o=>o.classList.remove('active')); el.classList.add('active'); edgeBidirVal=v; };
+    r.appendChild(el);
+  });
+}
+
+function saveEdge(){
+  if(!connectingFrom||!edgePanelTarget) return;
+  const label=document.getElementById('edge-label').value.trim();
+  const clientLabel=document.getElementById('edge-client-label').value.trim();
+  const therapistOnly=document.getElementById('edge-therapist-only').checked;
+  const id='e-'+Date.now();
+  const edge={ id, source:connectingFrom, target:edgePanelTarget, label, clientLabel, color:edgeColorVal, width:2, style:edgeStyleVal, therapistOnly, bidir:edgeBidirVal };
+  mapData.edges.push(edge);
+  cy.add({ data:{ id, source:connectingFrom, target:edgePanelTarget, label, clientLabel, edgeColor:edgeColorVal, edgeWidth:2, edgeStyle:edgeStyleVal, therapistOnly, bidir:edgeBidirVal } });
+  if(currentMode==='client'){ const el=cy.getElementById(id); if(therapistOnly) el.addClass('hidden-edge'); else el.data('label',clientLabel); }
+  cancelEdge();
+  scheduleSave();
+}
+
+// ============ EDGE POPUP ============
+let deleteEdgeId=null;
+function showEdgePopup(edge,evt){
+  deleteEdgeId=edge.id();
+  const d=edge.data();
+  const label=currentMode==='therapist'?(d.label||'связь'):(d.clientLabel||d.label||'связь');
+  document.getElementById('edge-popup-label').textContent=label||'связь';
+  const popup=document.getElementById('edge-delete-popup');
+  const pos=evt.renderedPosition||evt.position;
+  popup.style.left=(pos.x+10)+'px'; popup.style.top=(pos.y-10)+'px'; popup.style.display='flex';
+}
+function hideEdgePopup(){ document.getElementById('edge-delete-popup').style.display='none'; deleteEdgeId=null; }
+function deleteEdgeFromPopup(){
+  if(!deleteEdgeId) return;
+  cy.getElementById(deleteEdgeId).remove();
+  mapData.edges=mapData.edges.filter(e=>e.id!==deleteEdgeId);
+  hideEdgePopup();
+  scheduleSave();
+}
 
 // ============ START (sync first, then async DB) ============
 mapData = { nodes: JSON.parse(JSON.stringify(DEFAULT_NODES)), edges: JSON.parse(JSON.stringify(DEFAULT_EDGES)) };
