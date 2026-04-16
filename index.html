@@ -62,7 +62,13 @@ body{background:#0f0f1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-seri
 #loading{position:fixed;inset:0;background:#0f0f1a;display:flex;align-items:center;justify-content:center;z-index:9999;font-size:1.1em;color:#888}
 .lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:3000;align-items:center;justify-content:center;cursor:zoom-out}
 .lightbox.open{display:flex}
-.lightbox img{max-width:90vw;max-height:90vh;border-radius:12px;object-fit:contain;box-shadow:0 8px 40px rgba(0,0,0,.6)}
+.lightbox-inner{display:flex;gap:24px;align-items:flex-start;max-width:90vw;max-height:90vh;cursor:default}
+.lightbox img{max-width:55vw;max-height:85vh;border-radius:12px;object-fit:contain;box-shadow:0 8px 40px rgba(0,0,0,.6);flex-shrink:0}
+.lightbox-info{max-width:280px;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif}
+.lightbox-info h2{font-size:1.1em;color:#e8d5b7;margin-bottom:10px;line-height:1.4}
+.lightbox-info .lb-quote{font-style:italic;opacity:.85;border-left:2px solid #888;padding-left:10px;margin-bottom:10px;font-size:.9em;line-height:1.5}
+.lightbox-info .lb-detail{opacity:.65;font-size:.85em;line-height:1.5}
+.lightbox-close{position:fixed;top:20px;right:24px;background:none;border:none;color:#aaa;font-size:1.5em;cursor:pointer;z-index:3001;line-height:1}
 .connect-hint{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1000;background:rgba(30,30,50,.97);border:1px solid rgba(100,180,255,.3);border-radius:12px;padding:14px 28px;text-align:center;font-size:.9em;color:#e8d5b7;pointer-events:none;box-shadow:0 8px 32px rgba(0,0,0,.5)}
 .connect-hint.show{display:block}
 .edge-delete-popup{display:none;position:fixed;z-index:250;background:rgba(20,20,40,.97);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px 14px;font-size:.82em;backdrop-filter:blur(8px);display:flex;align-items:center;gap:8px}
@@ -153,7 +159,17 @@ body{background:#0f0f1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-seri
 
 <div class="tooltip" id="tooltip"></div>
 
-<div class="lightbox" id="lightbox" onclick="closeLightbox()"><img id="lightbox-img" src=""></div>
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+  <div class="lightbox-inner" onclick="event.stopPropagation()">
+    <img id="lightbox-img" src="">
+    <div class="lightbox-info" id="lightbox-info">
+      <h2 id="lightbox-name"></h2>
+      <div class="lb-quote" id="lightbox-quote"></div>
+      <div class="lb-detail" id="lightbox-detail"></div>
+    </div>
+  </div>
+</div>
 <div class="camera-btn" id="camera-btn" title="Посмотреть фото" onclick="openCurrentLightbox()">📷</div>
 <div class="connect-hint" id="connect-hint">Нажмите на часть, с которой хотите создать связь<br><small style="opacity:.6">Нажмите на пустое место для отмены</small></div>
 <div class="edge-delete-popup" id="edge-delete-popup" style="display:none">
@@ -553,14 +569,27 @@ function deletePart(){
 function closeEdit(){ editingNodeId=null; document.getElementById('edit-panel').style.display='none'; }
 
 // ============ LIGHTBOX ============
-function openLightbox(src){ document.getElementById('lightbox-img').src=src; document.getElementById('lightbox').classList.add('open'); }
+function openLightbox(src, data){
+  document.getElementById('lightbox-img').src=src;
+  const nm=document.getElementById('lightbox-name');
+  const qt=document.getElementById('lightbox-quote');
+  const dt=document.getElementById('lightbox-detail');
+  const info=document.getElementById('lightbox-info');
+  nm.textContent=(data?.name||'').replace(/\n/g,' ');
+  qt.innerHTML=(data?.quote||'').replace(/\n/g,'<br>');
+  dt.innerHTML=(data?.detail||'').replace(/\n/g,'<br>');
+  info.style.display=(data?.name||data?.quote||data?.detail)?'flex':'none';
+  document.getElementById('lightbox').classList.add('open');
+}
 function closeLightbox(){ document.getElementById('lightbox').classList.remove('open'); }
 
 // ============ CAMERA BTN ============
-let currentNodeImage='', cameraBtnTimer=null;
+let currentNodeImage='', currentNodeData={}, cameraBtnTimer=null;
 function showCameraBtn(node){
   const img=node.data('image'); if(!img) return;
   currentNodeImage=img;
+  const isC=currentMode==='client';
+  currentNodeData={ name:(isC?node.data('clientLabel'):node.data('label'))||'', quote:(isC?node.data('clientQuote'):node.data('quote'))||'', detail:(isC?node.data('clientDetail'):node.data('detail'))||'' };
   const pos=node.renderedPosition();
   const hw=node.renderedWidth()/2, hh=node.renderedHeight()/2;
   const btn=document.getElementById('camera-btn');
@@ -569,7 +598,7 @@ function showCameraBtn(node){
   clearTimeout(cameraBtnTimer); btn.classList.add('show');
 }
 function hideCameraBtn(){ cameraBtnTimer=setTimeout(()=>{ document.getElementById('camera-btn').classList.remove('show'); },150); }
-function openCurrentLightbox(){ if(currentNodeImage) openLightbox(currentNodeImage); }
+function openCurrentLightbox(){ if(currentNodeImage) openLightbox(currentNodeImage, currentNodeData); }
 
 // ============ CONNECTIONS ============
 let connectingFrom=null, edgePanelTarget=null, edgeColorVal='#888888', edgeStyleVal='solid', edgeBidirVal=false;
