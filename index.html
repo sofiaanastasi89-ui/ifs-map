@@ -443,7 +443,9 @@ function showTooltip(node,evt){
   const quote=isC?(d.clientQuote||d.quote):d.quote;
   const detail=isC?(d.clientDetail||d.detail):d.detail;
   const typeH=isC?'':`<div class="type">${d.nodeType}</div>`;
-  const imgH='';
+  currentNodeImage=d.image||'';
+  currentNodeData={ name:(isC?d.clientLabel:d.label)||'', quote:(isC?d.clientQuote:d.quote)||'', detail:(isC?d.clientDetail:d.detail)||'' };
+  const imgH=d.image?`<img class="part-img" src="${d.image}" onclick="openCurrentLightbox()" title="Открыть фото">`:'';
   tooltip.innerHTML=`<h3 style="color:${bc}">${(isC?d.clientLabel:d.label).replace(/\n/g,' ')}</h3>${typeH}<div class="quote" style="border-color:${bc}">${quote.replace(/\n/g,'<br>')}</div><div class="detail">${detail}</div>${imgH}`;
   const pos=evt.renderedPosition||evt.position;
   let l=pos.x+20, t=pos.y-20;
