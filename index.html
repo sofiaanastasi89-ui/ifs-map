@@ -654,8 +654,6 @@ function openEdgePanel(fromId,toId){
   const tn=mapData.nodes.find(n=>n.id===toId);
   document.getElementById('edge-from-to').textContent=(fn?.label||fromId).replace(/\n/g,' ')+' → '+(tn?.label||toId).replace(/\n/g,' ');
   document.getElementById('edge-label').value='';
-  document.getElementById('edge-client-label').value='';
-  document.getElementById('edge-therapist-only').checked=false;
   edgeColorVal='#888888'; edgeStyleVal='solid'; edgeBidirVal=false; edgeRelType='';
   buildEdgeTypeRow(); buildEdgeColorRow(); buildEdgeStyleRow(); buildEdgeDirRow();
   document.getElementById('edge-panel').style.display='block';
