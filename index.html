@@ -225,6 +225,94 @@ async function dbUploadImage(path, file) {
   return SUPABASE_URL + '/storage/v1/object/public/part-images/' + path;
 }
 
+// ============ CRYPTO ============
+function _u8toB64(arr) { let s=''; for(let i=0;i<arr.length;i++) s+=String.fromCharCode(arr[i]); return btoa(s); }
+function generateSaltB64() { return _u8toB64(crypto.getRandomValues(new Uint8Array(16))); }
+async function cryptoDeriveKey(password, saltB64) {
+  const salt = Uint8Array.from(atob(saltB64), c => c.charCodeAt(0));
+  const keyMat = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt:salt, iterations:200000, hash:'SHA-256' },
+    keyMat, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']);
+}
+async function cryptoEncrypt(key, obj) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv:iv }, key, new TextEncoder().encode(JSON.stringify(obj)));
+  const out = new Uint8Array(12 + ct.byteLength); out.set(iv,0); out.set(new Uint8Array(ct),12);
+  return _u8toB64(out);
+}
+async function cryptoDecrypt(key, b64) {
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const pt = await crypto.subtle.decrypt({ name:'AES-GCM', iv:bytes.slice(0,12) }, key, bytes.slice(12));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+// Build client-only view from encrypted DB format
+function buildClientView(dbData) {
+  const nodes = (dbData.nodes||[]).map(function(n) {
+    return Object.assign({}, n, { label:n.clientLabel||n.label||'', quote:n.clientQuote||n.quote||'', detail:n.clientDetail||n.detail||'', t:undefined });
+  });
+  const edges = (dbData.edges||[]).map(function(e) {
+    return Object.assign({}, e, { label:e.clientLabel!==undefined?e.clientLabel:(e.label||''), t:undefined });
+  });
+  return { name:dbData.name||'', nodes:nodes, edges:edges };
+}
+
+// Merge client-mode changes back into encrypted structure (preserve therapist blobs)
+function mergeClientChanges(encrypted, current) {
+  const out = JSON.parse(JSON.stringify(encrypted));
+  current.nodes.forEach(function(nd) {
+    const enc = out.nodes.find(function(n){ return n.id===nd.id; });
+    if(enc) { enc.clientLabel=nd.clientLabel; enc.clientQuote=nd.clientQuote; enc.clientDetail=nd.clientDetail; enc.color=nd.color; enc.border=nd.border; enc.image=nd.image||''; enc.x=nd.x; enc.y=nd.y; }
+    else { out.nodes.push(Object.assign({},nd,{t:undefined})); }
+  });
+  out.nodes = out.nodes.filter(function(n){ return current.nodes.find(function(c){ return c.id===n.id; }); });
+  current.edges.forEach(function(ed) {
+    const enc = out.edges.find(function(e){ return e.id===ed.id; });
+    if(enc) { enc.clientLabel=ed.clientLabel; enc.color=ed.color; enc.width=ed.width; enc.style=ed.style; enc.bidir=ed.bidir; }
+    else { out.edges.push(Object.assign({},ed,{t:undefined})); }
+  });
+  out.edges = out.edges.filter(function(e){ return current.edges.find(function(c){ return c.id===e.id; }); });
+  return out;
+}
+
+// Encrypt all therapist fields and produce DB-safe format
+async function encryptForDB(current, key, saltB64) {
+  const nodes = await Promise.all((current.nodes||[]).map(async function(nd) {
+    const tData = { label:nd.label||'', quote:nd.quote||'', detail:nd.detail||'', type:nd.type||'', group:nd.group||'' };
+    return { id:nd.id, clientLabel:nd.clientLabel||nd.label||'', clientQuote:nd.clientQuote||nd.quote||'',
+      clientDetail:nd.clientDetail||nd.detail||'', color:nd.color, border:nd.border, textColor:nd.textColor,
+      x:nd.x, y:nd.y, image:nd.image||'', t:await cryptoEncrypt(key,tData) };
+  }));
+  const edges = await Promise.all((current.edges||[]).map(async function(ed) {
+    const tData = { label:ed.label||'', therapistOnly:!!ed.therapistOnly, clientOnly:!!ed.clientOnly };
+    return { id:ed.id, source:ed.source, target:ed.target,
+      clientLabel:ed.clientLabel!==undefined?ed.clientLabel:(ed.label||''),
+      color:ed.color, width:ed.width, style:ed.style, bidir:!!ed.bidir,
+      therapistOnly:!!ed.therapistOnly, t:await cryptoEncrypt(key,tData) };
+  }));
+  const keyCheck = await cryptoEncrypt(key, { ok:1 });
+  return { name:current.name||'', salt:saltB64, keyCheck:keyCheck, nodes:nodes, edges:edges };
+}
+
+// Decrypt therapist fields from DB format into full in-memory mapData
+async function decryptTherapistFields(dbData, key) {
+  const nodes = await Promise.all((dbData.nodes||[]).map(async function(nd) {
+    let tData = {};
+    if(nd.t){ try{ tData=await cryptoDecrypt(key,nd.t); }catch(e){} }
+    return Object.assign({},nd,{ label:tData.label||nd.clientLabel||'', quote:tData.quote||nd.clientQuote||'',
+      detail:tData.detail||nd.clientDetail||'', type:tData.type||nd.type||'', group:tData.group||nd.group||'' });
+  }));
+  const edges = await Promise.all((dbData.edges||[]).map(async function(ed) {
+    let tData = {};
+    if(ed.t){ try{ tData=await cryptoDecrypt(key,ed.t); }catch(e){} }
+    return Object.assign({},ed,{ label:tData.label!==undefined?tData.label:(ed.clientLabel||''),
+      therapistOnly:tData.therapistOnly!==undefined?tData.therapistOnly:!!ed.therapistOnly,
+      clientOnly:tData.clientOnly!==undefined?tData.clientOnly:!!ed.clientOnly });
+  }));
+  return Object.assign({},dbData,{nodes:nodes,edges:edges});
+}
+
 // ============ DEFAULT DATA FOR CL-025 ============
 const DEFAULT_NODES = [
   { id:'self', label:'Наблюдатель\n/ Self', clientLabel:'Я', type:'Self', group:'self', quote:'«просто есть и есть»\n«режим наблюдателя»', clientQuote:'«Просто есть и есть.\nРежим наблюдателя»', detail:'Спокойный, нейтральный.', clientDetail:'Спокойное состояние. Когда можно просто наблюдать.', color:'#27ae60', border:'#2ecc71', textColor:'#fff', x:0, y:-350, image:'' },
@@ -259,6 +347,9 @@ let editColor = null;
 let editShape = null;
 let saveTimeout = null;
 let cy = null;
+let therapistKey = null;
+let therapistSalt = null;
+let mapDataEncrypted = null;
 
 // ============ INIT ============
 async function init() {
@@ -280,10 +371,13 @@ async function init() {
   try {
     var row = await dbSelect(mapSlug);
     if (row) {
-      mapData = row.data;
+      mapDataEncrypted = row.data;
+      // Show client view — therapist fields not in memory
+      mapData = buildClientView(mapDataEncrypted);
       rebuildGraph();
     } else {
-      await dbInsert({ slug: mapSlug, therapist_code: 'ifs2025', data: mapData });
+      // New map: no therapist key yet, store plain (will encrypt on first therapist save)
+      await dbInsert({ slug: mapSlug, therapist_code: 'encrypted', data: mapData });
     }
   } catch(e) { console.error('DB load error:', e); }
 
@@ -291,8 +385,13 @@ async function init() {
   setInterval(async function() {
     try {
       var r = await dbSelect(mapSlug);
-      if (r && JSON.stringify(r.data) !== JSON.stringify(mapData)) {
-        mapData = r.data;
+      if (r && JSON.stringify(r.data) !== JSON.stringify(mapDataEncrypted)) {
+        mapDataEncrypted = r.data;
+        if(currentMode==='therapist' && therapistKey) {
+          mapData = await decryptTherapistFields(mapDataEncrypted, therapistKey);
+        } else {
+          mapData = buildClientView(mapDataEncrypted);
+        }
         rebuildGraph();
       }
     } catch(e) {}
@@ -395,13 +494,45 @@ document.getElementById('main-title').addEventListener('click', function(){
     clickCount=0; clearTimeout(clickTimer);
     if(currentMode==='client'){
       const code=prompt('Код терапевта:');
-      if(code==='ifs2025') setMode('therapist');
+      if(!code) return;
+      enterTherapistMode(code);
     } else { setMode('client'); }
   }
 });
 
+async function enterTherapistMode(code) {
+  // Derive key from password — never compare the code as a string
+  let salt = (mapDataEncrypted && mapDataEncrypted.salt) || null;
+  const isFirstLogin = !salt;
+  if (isFirstLogin) salt = generateSaltB64();
+  const key = await cryptoDeriveKey(code, salt);
+  // Verify key is correct if map already encrypted
+  if (!isFirstLogin && mapDataEncrypted && mapDataEncrypted.keyCheck) {
+    try { await cryptoDecrypt(key, mapDataEncrypted.keyCheck); }
+    catch(e) { alert('Неверный код'); return; }
+  }
+  therapistKey = key;
+  therapistSalt = salt;
+  // Decrypt therapist fields into mapData
+  if (mapDataEncrypted && mapDataEncrypted.salt) {
+    mapData = await decryptTherapistFields(mapDataEncrypted, key);
+  }
+  // First login: encrypt and save immediately to establish encrypted format
+  if (isFirstLogin) {
+    mapDataEncrypted = await encryptForDB(mapData, key, salt);
+    await dbUpdate(mapSlug, mapDataEncrypted);
+  }
+  setMode('therapist');
+}
+
 function setMode(mode){
   currentMode=mode;
+  if(mode==='client') {
+    // Wipe therapist data from memory — client sees only client fields
+    therapistKey=null; therapistSalt=null;
+    if(mapDataEncrypted) mapData=buildClientView(mapDataEncrypted);
+    rebuildGraph();
+  }
   document.getElementById('main-title').textContent = mode==='therapist'? ((mapData&&mapData.name)||mapSlug||'Карта клиента') : 'Моя карта частей';
   document.getElementById('btn-back').classList.toggle('hidden', mode!=='therapist');
   document.getElementById('legend-therapist').classList.toggle('hidden', mode!=='therapist');
@@ -433,7 +564,19 @@ function scheduleSave(){
   if(saveTimeout) clearTimeout(saveTimeout);
   saveTimeout=setTimeout(async()=>{
     syncPositions();
-    await dbUpdate(mapSlug, mapData);
+    let toSave;
+    if(currentMode==='therapist' && therapistKey && therapistSalt) {
+      // Encrypt all therapist fields before writing to DB
+      toSave = await encryptForDB(mapData, therapistKey, therapistSalt);
+      mapDataEncrypted = toSave;
+    } else if(mapDataEncrypted) {
+      // Client mode: merge visible changes into encrypted structure, keep therapist blobs intact
+      toSave = mergeClientChanges(mapDataEncrypted, mapData);
+      mapDataEncrypted = toSave;
+    } else {
+      toSave = mapData;
+    }
+    await dbUpdate(mapSlug, toSave);
     ind.textContent='сохранено'; ind.className='save-indicator saved';
     setTimeout(()=>{ ind.textContent=''; ind.className='save-indicator'; }, 2000);
   }, 800);
